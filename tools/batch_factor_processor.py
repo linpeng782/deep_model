@@ -232,7 +232,9 @@ def generate_factors_for_stock(stock_symbol, end_date):
 
         # 读取原始平安银行 CSV 文件进行对比
         if stock_symbol == "000001.XSHE":
-            original_csv_path = "/Users/didi/KDCJ/deep_model/backtest/日线后复权及常用指标csv/000001.SZ-平安银行-日线后复权及常用指标-20250718.csv"
+            original_csv_path = os.path.join(
+                RAW_DATA_DIR, "000001.SZ-平安银行-日线后复权及常用指标-20250718.csv"
+            )
             try:
                 original_df = pd.read_csv(original_csv_path, encoding="utf-8")
 
@@ -268,9 +270,9 @@ def generate_factors_for_stock(stock_symbol, end_date):
                     print(f"多余日期示例: {sorted(list(extra_in_new))[:10]}")
 
                 if not missing_in_new and not extra_in_new:
-                    print("✅ 交易日期完全一致")
+                    print("交易日期完全一致")
                 else:
-                    print("⚠️  交易日期存在差异")
+                    print("交易日期存在差异")
                 print("=" * 30)
 
             except Exception as e:
@@ -316,9 +318,9 @@ def generate_factors_for_stock(stock_symbol, end_date):
                 print(f"多余日期示例: {sorted(list(extra_in_filtered))[:10]}")
 
             if not missing_in_filtered and not extra_in_filtered:
-                print("✅ 过滤后交易日期与原始CSV完全一致")
+                print("过滤后交易日期与原始CSV完全一致")
             else:
-                print("⚠️  过滤后交易日期与原始CSV存在差异")
+                print("过滤后交易日期与原始CSV存在差异")
             print("=" * 30)
 
         # 返回过滤后的DataFrame（移除了换手率为0的行）
@@ -360,51 +362,6 @@ def get_stock_list_from_csv_folder(csv_folder_path, limit=None):
     return stock_list
 
 
-def process_single_stock_parallel(stock_info, output_folder_path, end_date):
-    """
-    并行处理单只股票的函数
-    """
-    try:
-        stock_symbol = stock_info["converted_code"]
-        stock_name = stock_info["stock_name"]
-
-        # 生成因子数据
-        factors_df = generate_factors_for_stock(stock_symbol, end_date)
-
-        if factors_df is not None:
-            # 生成输出文件名
-            output_filename = (
-                f"{stock_symbol}-{stock_name}-日线后复权及常用指标-{end_date}.csv"
-            )
-            output_path = Path(output_folder_path) / output_filename
-
-            # 保存CSV文件
-            factors_df.to_csv(output_path, encoding="utf-8", index=False)
-
-            return {
-                "success": True,
-                "stock_symbol": stock_symbol,
-                "stock_name": stock_name,
-                "filename": output_filename,
-                "shape": factors_df.shape,
-            }
-        else:
-            return {
-                "success": False,
-                "stock_symbol": stock_symbol,
-                "stock_name": stock_name,
-                "error": "处理失败",
-            }
-
-    except Exception as e:
-        return {
-            "success": False,
-            "stock_symbol": stock_info.get("converted_code", "Unknown"),
-            "stock_name": stock_info.get("stock_name", "Unknown"),
-            "error": str(e),
-        }
-
-
 def batch_process_stocks_parallel(
     csv_folder_path, output_folder_path, end_date, limit=None, max_workers=4
 ):
@@ -433,27 +390,43 @@ def batch_process_stocks_parallel(
 
     # 使用线程池并行处理
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # 提交所有任务
+        # 直接提交generate_factors_for_stock任务
         future_to_stock = {
             executor.submit(
-                process_single_stock_parallel, stock_info, output_folder_path, end_date
+                generate_factors_for_stock, stock_info["converted_code"], end_date
             ): stock_info
             for stock_info in stock_list
         }
 
         # 处理完成的任务
         for i, future in enumerate(as_completed(future_to_stock), 1):
-            result = future.result()
+            stock_info = future_to_stock[future]
+            stock_symbol = stock_info["converted_code"]
+            stock_name = stock_info["stock_name"]
 
-            if result["success"]:
-                success_count += 1
-                print(
-                    f"进度: {i}/{len(stock_list)} - 成功: {result['filename']} - 形状: {result['shape']}"
-                )
-            else:
+            try:
+                factors_df = future.result()
+
+                if factors_df is not None:
+                    # 在主线程中保存文件
+                    output_filename = f"{stock_symbol}-{stock_name}-日线后复权及常用指标-{end_date}.csv"
+                    output_path = output_folder / output_filename
+                    factors_df.to_csv(output_path, encoding="utf-8", index=False)
+
+                    success_count += 1
+                    print(
+                        f"进度: {i}/{len(stock_list)} - 成功: {output_filename} - 形状: {factors_df.shape}"
+                    )
+                else:
+                    failed_count += 1
+                    print(
+                        f"进度: {i}/{len(stock_list)} - 失败: {stock_symbol} - 错误: 生成因子失败"
+                    )
+
+            except Exception as e:
                 failed_count += 1
                 print(
-                    f"进度: {i}/{len(stock_list)} - 失败: {result['stock_symbol']} - 错误: {result['error']}"
+                    f"进度: {i}/{len(stock_list)} - 失败: {stock_symbol} - 错误: {str(e)}"
                 )
 
     print(f"\n处理完成！")
@@ -554,26 +527,40 @@ def retry_failed_stocks(
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_stock = {
                 executor.submit(
-                    process_single_stock_parallel,
-                    stock_info,
-                    output_folder_path,
+                    generate_factors_for_stock,
+                    stock_info["converted_code"],
                     end_date,
                 ): stock_info
                 for stock_info in failed_stocks
             }
 
             for i, future in enumerate(as_completed(future_to_stock), 1):
-                result = future.result()
+                stock_info = future_to_stock[future]
+                stock_symbol = stock_info["converted_code"]
+                stock_name = stock_info["stock_name"]
 
-                if result["success"]:
-                    success_count += 1
-                    print(
-                        f"重试进度: {i}/{len(failed_stocks)} - 成功: {result['filename']}"
-                    )
-                else:
+                try:
+                    factors_df = future.result()
+
+                    if factors_df is not None:
+                        output_filename = f"{stock_symbol}-{stock_name}-日线后复权及常用指标-{end_date}.csv"
+                        output_path = output_folder / output_filename
+                        factors_df.to_csv(output_path, encoding="utf-8", index=False)
+
+                        success_count += 1
+                        print(
+                            f"重试进度: {i}/{len(failed_stocks)} - 成功: {output_filename}"
+                        )
+                    else:
+                        failed_count += 1
+                        print(
+                            f"重试进度: {i}/{len(failed_stocks)} - 失败: {stock_symbol} - 错误: 生成因子失败"
+                        )
+
+                except Exception as e:
                     failed_count += 1
                     print(
-                        f"重试进度: {i}/{len(failed_stocks)} - 失败: {result['stock_symbol']} - 错误: {result['error']}"
+                        f"重试进度: {i}/{len(failed_stocks)} - 失败: {stock_symbol} - 错误: {str(e)}"
                     )
     else:
         print(f"使用串行模式重试")
@@ -661,11 +648,11 @@ if __name__ == "__main__":
     print(f"时间戳: {timestamp}")
 
     # 选择测试模式
-    test_mode = "single"  # "single", "batch", 或 "retry_failed"
+    test_mode = "batch"  # "single", "batch", 或 "retry_failed"
 
     if test_mode == "single":
         # 测试单只股票
-        stock_code = "000002.XSHE"
+        stock_code = "000001.XSHE"
         test_single_stock(stock_code, output_folder_path, end_date)
 
     elif test_mode == "batch":
