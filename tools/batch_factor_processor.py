@@ -8,10 +8,20 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 import time
 
+# 添加项目配置路径
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+from config.paths import RAW_DATA_DIR, ENHANCED_DATA_DIR
+from config.settings import get_config, get_timestamped_output_path
 
-# 添加alpha_local目录到Python路径
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "alpha_local"))
-from factor_processing_utils import *
+# 导入factor_processing_utils
+kdcj_root = os.path.join(os.path.dirname(__file__), "..", "..")
+sys.path.insert(0, kdcj_root)
+try:
+    from factor_processing_utils import *
+
+    print("成功导入factor_processing_utils")
+except ImportError as e:
+    print(f"无法导入factor_processing_utils: {e}")
 
 # 因子中英文映射字典
 factor_name_mapping = {
@@ -634,15 +644,24 @@ def test_single_stock(stock_symbol, output_folder_path, end_date="20250718"):
 
 
 if __name__ == "__main__":
-    # 设置路径
-    csv_folder_path = "/Users/didi/KDCJ/deep_model/backtest/日线后复权及常用指标csv"
-    output_folder_path = "/Users/didi/KDCJ/deep_model/enhanced_factors_csv"
+    # 从配置文件获取路径
+    csv_folder_path = RAW_DATA_DIR
 
-    # 设置结束日期，注意每次更新时都必须设置！
-    end_date = "20250818"
+    # 从配置文件获取数据配置
+    data_config = get_config("data")
+    end_date = data_config.get("end_date", "20250818")
+
+    # 生成带时间戳的输出路径
+    output_folder_path = get_timestamped_output_path(ENHANCED_DATA_DIR)
+    timestamp = os.path.basename(output_folder_path).split("_")[-1]
+
+    print(f"输入路径: {csv_folder_path}")
+    print(f"输出路径: {output_folder_path}")
+    print(f"结束日期: {end_date}")
+    print(f"时间戳: {timestamp}")
 
     # 选择测试模式
-    test_mode = "batch"  # "single", "batch", 或 "retry_failed"
+    test_mode = "single"  # "single", "batch", 或 "retry_failed"
 
     if test_mode == "single":
         # 测试单只股票
@@ -656,13 +675,14 @@ if __name__ == "__main__":
 
         if use_parallel:
             print(f"并行批量测试所有股票")
-            # 降低并发数以避免API连接数超限
+            # 从配置获取并行参数
+            max_workers = data_config.get("max_workers", 4)
             batch_process_stocks_parallel(
                 csv_folder_path,
                 output_folder_path,
                 end_date,
                 limit=limit,
-                max_workers=4,
+                max_workers=max_workers,
             )
         else:
             print(f"串行批量测试所有股票")
@@ -672,12 +692,13 @@ if __name__ == "__main__":
 
     elif test_mode == "retry_failed":
         # 重试失败的股票
-        use_parallel_retry = True  # 建议使用串行模式提高成功率
+        use_parallel_retry = data_config.get("use_parallel", True)
+        max_workers_retry = max(data_config.get("max_workers", 4) // 2, 1)
         print(f"重试处理失败的股票")
         retry_failed_stocks(
             csv_folder_path,
             output_folder_path,
             end_date,
             use_parallel=use_parallel_retry,
-            max_workers=2,
+            max_workers=max_workers_retry,
         )
