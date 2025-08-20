@@ -11,7 +11,7 @@ import time
 # 添加项目配置路径
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from config.paths import RAW_DATA_DIR, ENHANCED_DATA_DIR
-from config.settings import get_config, get_timestamped_output_path
+from config.settings import get_timestamped_output_path
 
 # 导入factor_processing_utils
 kdcj_root = os.path.join(os.path.dirname(__file__), "..", "..")
@@ -630,13 +630,17 @@ def test_single_stock(stock_symbol, output_folder_path, end_date="20250718"):
         return False
 
 
+
+
+
+# 每日手动调整的日期
+END_DATE = "20250819"  # 格式: YYYYMMDD
+
 if __name__ == "__main__":
+    end_date = END_DATE
+    
     # 从配置文件获取路径
     csv_folder_path = RAW_DATA_DIR
-
-    # 从配置文件获取数据配置
-    data_config = get_config("data")
-    end_date = data_config.get("end_date", "20250818")
 
     # 生成带时间戳的输出路径
     output_folder_path = get_timestamped_output_path(ENHANCED_DATA_DIR)
@@ -662,8 +666,7 @@ if __name__ == "__main__":
 
         if use_parallel:
             print(f"并行批量测试所有股票")
-            # 从配置获取并行参数
-            max_workers = data_config.get("max_workers", 4)
+            max_workers = 4
             batch_process_stocks_parallel(
                 csv_folder_path,
                 output_folder_path,
@@ -679,8 +682,8 @@ if __name__ == "__main__":
 
     elif test_mode == "retry_failed":
         # 重试失败的股票
-        use_parallel_retry = data_config.get("use_parallel", True)
-        max_workers_retry = max(data_config.get("max_workers", 4) // 2, 1)
+        use_parallel_retry = True
+        max_workers_retry = 2
         print(f"重试处理失败的股票")
         retry_failed_stocks(
             csv_folder_path,

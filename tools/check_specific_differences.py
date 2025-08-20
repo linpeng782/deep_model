@@ -7,6 +7,7 @@
 import os
 import pandas as pd
 import numpy as np
+import argparse
 from pathlib import Path
 import sys
 
@@ -92,24 +93,39 @@ def detailed_compare_files(file1_path, file2_path):
     except Exception as e:
         print(f"❌ 错误: {str(e)}")
 
-def check_known_differences():
+def check_known_differences(folder1=None, folder2=None, files=None):
     """
     检查已知有差异的文件
-    """
-    # 根据全面扫描的结果，这些文件有差异
-    diff_files = [
-        "871694.BJSE-中裕科技-日线后复权及常用指标-20250818.csv",
-        "300452.XSHE-山河药辅-日线后复权及常用指标-20250818.csv",
-        "688665.XSHG-四方光电-日线后复权及常用指标-20250818.csv",
-        "301387.XSHE-光大同创-日线后复权及常用指标-20250818.csv",
-        "603893.XSHG-瑞芯微-日线后复权及常用指标-20250818.csv",
-        "831087.BJSE-秋乐种业-日线后复权及常用指标-20250818.csv",
-        "002299.XSHE-圣农发展-日线后复权及常用指标-20250818.csv",
-        "835174.BJSE-五新遂装-日线后复权及常用指标-20250818.csv",
-    ]
     
-    original_folder = ENHANCED_DATA_DIR
-    new_folder = ENHANCED_DATA_DIR + "_20250819"
+    Args:
+        folder1 (str): 第一个文件夹路径
+        folder2 (str): 第二个文件夹路径
+        files (list): 要检查的文件列表，默认使用已知有差异的文件
+    """
+    if files is None:
+        # 根据全面扫描的结果，这些文件有差异
+        diff_files = [
+            "871694.BJSE-中裕科技-日线后复权及常用指标-20250818.csv",
+            "300452.XSHE-山河药辅-日线后复权及常用指标-20250818.csv",
+            "688665.XSHG-四方光电-日线后复权及常用指标-20250818.csv",
+            "301387.XSHE-光大同创-日线后复权及常用指标-20250818.csv",
+            "603893.XSHG-瑞芯微-日线后复权及常用指标-20250818.csv",
+            "831087.BJSE-秋乐种业-日线后复权及常用指标-20250818.csv",
+            "002299.XSHE-圣农发展-日线后复权及常用指标-20250818.csv",
+            "835174.BJSE-五新遂装-日线后复权及常用指标-20250818.csv",
+        ]
+    else:
+        diff_files = files
+    
+    if folder1 is None:
+        original_folder = ENHANCED_DATA_DIR
+    else:
+        original_folder = folder1
+        
+    if folder2 is None:
+        new_folder = ENHANCED_DATA_DIR + "_20250819"
+    else:
+        new_folder = folder2
     
     for filename in diff_files:
         file1_path = os.path.join(original_folder, filename)
@@ -125,5 +141,30 @@ def check_known_differences():
             if not os.path.exists(file2_path):
                 print(f"  新文件不存在: {file2_path}")
 
+def main():
+    """
+    主函数，处理命令行参数
+    """
+    parser = argparse.ArgumentParser(description='检查特定文件的差异详情')
+    parser.add_argument('--folder1', type=str, help='第一个文件夹路径（相对于enhanced目录）')
+    parser.add_argument('--folder2', type=str, help='第二个文件夹路径（相对于enhanced目录）')
+    parser.add_argument('--files', type=str, nargs='+', help='要检查的文件列表')
+    
+    args = parser.parse_args()
+    
+    # 如果提供了参数，构建完整路径
+    folder1_path = None
+    folder2_path = None
+    
+    if args.folder1:
+        folder1_path = os.path.join(os.path.dirname(ENHANCED_DATA_DIR), args.folder1)
+        print(f"第一个文件夹: {folder1_path}")
+        
+    if args.folder2:
+        folder2_path = os.path.join(os.path.dirname(ENHANCED_DATA_DIR), args.folder2)
+        print(f"第二个文件夹: {folder2_path}")
+    
+    check_known_differences(folder1_path, folder2_path, args.files)
+    
 if __name__ == "__main__":
-    check_known_differences()
+    main()

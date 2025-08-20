@@ -7,7 +7,6 @@ from datetime import datetime
 
 # 数据配置
 DATA_CONFIG = {
-    "end_date": "20250818",  # 数据结束日期
     "max_workers": 4,        # 并行处理的最大工作线程数
     "use_parallel": True,    # 是否使用并行处理
 }

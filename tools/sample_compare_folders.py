@@ -8,6 +8,7 @@ import os
 import pandas as pd
 import numpy as np
 import random
+import argparse
 from pathlib import Path
 import sys
 
@@ -213,13 +214,33 @@ def sample_compare_folders(folder1, folder2, sample_size=500):
     else:
         print(f"\n❌ 重构可能存在问题，一致性仅: {success_rate:.1f}%")
 
-if __name__ == "__main__":
-    # 设置文件夹路径
-    original_folder = ENHANCED_DATA_DIR  # 原始的enhanced_factors_csv文件夹
-    new_folder = ENHANCED_DATA_DIR + "_20250819"  # 新生成的文件夹
+def main():
+    """
+    主函数，处理命令行参数
+    """
+    parser = argparse.ArgumentParser(description='抽样比较两个文件夹中CSV文件的内容')
+    parser.add_argument('--folder1', type=str, help='第一个文件夹路径（相对于enhanced目录）')
+    parser.add_argument('--folder2', type=str, help='第二个文件夹路径（相对于enhanced目录）')
+    parser.add_argument('--sample-size', type=int, default=500, help='抽样数量（默认500）')
     
-    print("原始文件夹:", original_folder)
-    print("新生成文件夹:", new_folder)
+    args = parser.parse_args()
+    
+    # 如果提供了参数，构建完整路径
+    if args.folder1 and args.folder2:
+        folder1_path = os.path.join(os.path.dirname(ENHANCED_DATA_DIR), args.folder1)
+        folder2_path = os.path.join(os.path.dirname(ENHANCED_DATA_DIR), args.folder2)
+        print(f"第一个文件夹: {folder1_path}")
+        print(f"第二个文件夹: {folder2_path}")
+    else:
+        # 使用默认路径
+        folder1_path = ENHANCED_DATA_DIR  # 原始的enhanced_factors_csv文件夹
+        folder2_path = ENHANCED_DATA_DIR + "_20250819"  # 新生成的文件夹
+        print("使用默认路径:")
+        print(f"原始文件夹: {folder1_path}")
+        print(f"新生成文件夹: {folder2_path}")
     
     # 执行抽样比较
-    sample_compare_folders(original_folder, new_folder, sample_size=500)  # 进行更全面的验证
+    sample_compare_folders(folder1_path, folder2_path, sample_size=args.sample_size)
+    
+if __name__ == "__main__":
+    main()
