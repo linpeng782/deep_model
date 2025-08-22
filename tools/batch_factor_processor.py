@@ -13,15 +13,15 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from config.paths import RAW_DATA_DIR, ENHANCED_DATA_DIR
 from config.settings import get_timestamped_output_path
 
-# 导入factor_processing_utils
+# 导入统一的factor_utils包
 kdcj_root = os.path.join(os.path.dirname(__file__), "..", "..")
 sys.path.insert(0, kdcj_root)
 try:
-    from factor_processing_utils import *
+    from factor_utils import *
 
-    print("成功导入factor_processing_utils")
+    print("成功导入factor_utils")
 except ImportError as e:
-    print(f"无法导入factor_processing_utils: {e}")
+    print(f"无法导入factor_utils: {e}")
 
 # 因子中英文映射字典
 factor_name_mapping = {
@@ -171,6 +171,17 @@ def generate_factors_for_stock(stock_symbol, end_date):
             "dividend_yield_ttm",
             "market_cap_3",
             "market_cap_2",
+            "ep_ratio_ttm",
+            "book_to_market_ratio_ttm",
+            "ebit_ttm",
+            "ebitda_ttm",
+            "ebit_per_share_ttm",
+            "return_on_equity_lyr",
+            "return_on_equity_ttm",
+            
+
+
+
         ]
 
         daily_fund = get_factor(stock_symbol, fund_list, start_date, end_date)
@@ -652,7 +663,7 @@ if __name__ == "__main__":
     print(f"时间戳: {timestamp}")
 
     # 选择测试模式
-    test_mode = "batch"  # "single", "batch", 或 "retry_failed"
+    test_mode = "single"  # "single", "batch", 或 "retry_failed"
 
     if test_mode == "single":
         # 测试单只股票

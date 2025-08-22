@@ -139,14 +139,12 @@ def get_stock_bars(stock_price_data, portfolio_weights, adjust, price_type):
     print(f"筛选后数据形状: {filtered_data.shape}")
 
     # 根据价格类型和复权类型返回相应的价格数据
-    if price_type == "open":
-        # 返回开盘价
+    if price_type == "open":  # 返回开盘价
         if adjust == "post":
             return filtered_data["开盘价"].unstack("order_book_id")
         else:
             return filtered_data["未复权开盘价"].unstack("order_book_id")
-    elif price_type == "close":
-        # 返回收盘价
+    elif price_type == "close":  # 返回收盘价
         if adjust == "post":
             return filtered_data["收盘价"].unstack("order_book_id")
         else:

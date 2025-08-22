@@ -255,7 +255,7 @@ def rolling_backtest(
 
         # 统一转换为pd.Timestamp类型
         rebalance_date = pd.Timestamp(month_date_raw)
-        
+
         # 调试：组合0的第一次调仓（第13个月，portfolio_index=0）
         # if month_idx == 12 and portfolio_index == 0:
         #     print(f"调试点：组合0的第一次调仓，日期：{rebalance_date}")
@@ -295,11 +295,15 @@ def rolling_backtest(
                 last_period_records = portfolio_histories[portfolio_index][
                     "total_account_asset"
                 ][-1]
-                total_asset_before_rebalance = last_period_records.iloc[-1]  # 最后一天的总资产
+                total_asset_before_rebalance = last_period_records.iloc[
+                    -1
+                ]  # 最后一天的总资产
             else:
                 # 如果没有历史记录，使用月度资金（理论上不应该发生）
                 total_asset_before_rebalance = monthly_capital
-                print(f"警告：未找到历史记录，使用月度资金: {total_asset_before_rebalance:.2f}")
+                print(
+                    f"警告：未找到历史记录，使用月度资金: {total_asset_before_rebalance:.2f}"
+                )
 
             # 重置组合的到期日期（新的N个月周期）
             current_portfolio["expire_date"] = get_expire_date(
@@ -323,7 +327,9 @@ def rolling_backtest(
         sell_cost = 0.0
         if len(current_portfolio["holdings"]) > 0:
             # 计算当前持仓市值
-            current_market_value = (current_portfolio["holdings"] * current_sell_prices).sum()
+            current_market_value = (
+                current_portfolio["holdings"] * current_sell_prices
+            ).sum()
             # 计算卖出手续费
             sell_cost = current_market_value * sell_cost_rate
             # 清仓后的可用资金 = 总资产 - 卖出手续费
@@ -337,11 +343,17 @@ def rolling_backtest(
         if len(target_stocks) > 0:
             # 使用矩阵运算计算目标持仓（等权分配）
             target_holdings = (
-                current_target_weights * investable_cash / current_buy_prices.loc[target_stocks]
-            ).round(4)  # 保疙4位小数
+                current_target_weights
+                * investable_cash
+                / current_buy_prices.loc[target_stocks]
+            ).round(
+                4
+            )  # 保疙4位小数
 
             # 计算实际投资金额
-            actual_investment = (target_holdings * current_buy_prices.loc[target_stocks]).sum()
+            actual_investment = (
+                target_holdings * current_buy_prices.loc[target_stocks]
+            ).sum()
 
             # 计算剩余现金
             remaining_cash = investable_cash - actual_investment
