@@ -172,7 +172,7 @@ if __name__ == "__main__":
     import os
     
     # 配置参数
-    signal_filename = "20160104_20250819_signal"  # 信号文件名
+    signal_filename = "20160104_20250619_signal"  # 信号文件名
     rank_n = 30  # 选股数量
     
     # 获取信号文件路径

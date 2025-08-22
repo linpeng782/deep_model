@@ -12,7 +12,6 @@ from rolling_backtest_post import (
 )
 
 
-
 def run_multi_scenario_backtest(
     portfolio_weights, bars_df, benchmark_index, scenarios="open_open"
 ):
@@ -77,7 +76,7 @@ def run_multi_scenario_backtest(
         account_result = rolling_backtest(
             portfolio_weights,
             bars_df,
-            holding_months=12,
+            holding_months=1,
             sell_timing=scenario["sell_timing"],
             buy_timing=scenario["buy_timing"],
         )
@@ -135,17 +134,58 @@ def run_multi_scenario_backtest(
     return best_result, combined_df
 
 
+def get_portfolio_weights_path(end_date, rank_n):
+    """
+    根据结束日期和排名参数获取portfolio_weights文件路径
+    """
+    import glob
+
+    buy_list_dir = "/Users/didi/KDCJ/deep_model/data/cache/buy_list"
+    # 查找包含end_date和rank_n的文件
+    pattern = f"*_{end_date.replace('-', '')}_rank{rank_n}_weights.pkl"
+    matching_files = glob.glob(os.path.join(buy_list_dir, pattern))
+
+    if not matching_files:
+        raise FileNotFoundError(f"未找到匹配的portfolio_weights文件: {pattern}")
+    elif len(matching_files) > 1:
+        print(f"警告：找到多个匹配文件，使用第一个: {matching_files[0]}")
+
+    return matching_files[0]
+
+
+def get_bars_df_path(end_date):
+    """
+    根据结束日期获取bars_df文件路径
+    """
+    import glob
+
+    bars_dir = "/Users/didi/KDCJ/deep_model/data/cache/bars"
+    # 查找包含end_date的文件
+    pattern = f"{end_date.replace('-', '')}_bars_df.pkl"
+    bars_df_path = os.path.join(bars_dir, pattern)
+
+    if not os.path.exists(bars_df_path):
+        raise FileNotFoundError(f"未找到bars_df文件: {bars_df_path}")
+
+    return bars_df_path
+
+
 if __name__ == "__main__":
 
     # 获取当前脚本所在目录
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
+    end_date = "2025-08-19"
+    rank_n = 10
+
     # 读取买入队列
-    portfolio_weights_path = os.path.join(current_dir, "portfolio_weights.pkl")
+    portfolio_weights_path = get_portfolio_weights_path(end_date, rank_n)
+    print(f"读取portfolio_weights: {os.path.basename(portfolio_weights_path)}")
     portfolio_weights = pd.read_pickle(portfolio_weights_path)
 
     # 读取股票价格数据
-    bars_df_path = os.path.join(current_dir, "bars_df.pkl")
+    bars_df_path = get_bars_df_path(end_date)
+    print(f"读取bars_df: {os.path.basename(bars_df_path)}")
     bars_df = pd.read_pickle(bars_df_path)
 
     # 读取基准
@@ -156,5 +196,5 @@ if __name__ == "__main__":
     # scenarios="open_open"  - 只测试开盘价卖出-开盘价买入（默认）
     # scenarios="all"       - 测试所有三种场景
     best_result, comparison_df = run_multi_scenario_backtest(
-        portfolio_weights, bars_df, index_item, scenarios="all"
+        portfolio_weights, bars_df, index_item
     )
