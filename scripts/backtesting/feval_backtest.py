@@ -46,31 +46,32 @@ def get_bars_df_path(end_date):
 
 
 if __name__ == "__main__":
-   
+
     # 获取当前脚本所在目录
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
     signal_end_date = "2025-08-19"
     backtest_end_date = "2025-06-19"
-   
-    rank_n = 10
-    rebalance_frequency = 20
 
-    # 读取买入队列
+    rank_n = 10
+    rebalance_frequency = 252
+
+    # 读取买入队列从buy_list文件夹中读取
     portfolio_weights_path = get_portfolio_weights_path(signal_end_date, rank_n)
     print(f"读取portfolio_weights: {os.path.basename(portfolio_weights_path)}")
     portfolio_weights = pd.read_pickle(portfolio_weights_path)
     # 根据backtest_end_date截取portfolio_weights
     portfolio_weights = portfolio_weights.loc[:backtest_end_date]
 
-    # 读取股票价格数据
-    bars_end_date = "2025-08-19"
-    bars_df_path = get_bars_df_path(bars_end_date)
+    # 读取股票价格数据从bars文件夹中读取
+    bars_df_path = get_bars_df_path(backtest_end_date)
     print(f"读取bars_df: {os.path.basename(bars_df_path)}")
     bars_df = pd.read_pickle(bars_df_path)
 
     # 执行回测
-    account_result = backtest(portfolio_weights, bars_df,rebalance_frequency=rebalance_frequency)
+    account_result = backtest(
+        portfolio_weights, bars_df, rebalance_frequency=rebalance_frequency
+    )
 
     # 绘制比较结果
     # 绩效分析并保存策略报告

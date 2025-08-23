@@ -53,17 +53,17 @@ def calc_transaction_fee(
 
 
 # 获取股票价格数据
-def get_stock_bars(stock_price_data, portfolio_weights, adjust):
+def get_stock_bars(bar_data, portfolio_weights, adjust):
     """
     从股票价格数据中获取指定时间范围和股票列表的开盘价数据
 
     参数:
-        stock_price_data: 股票价格数据（多级索引DataFrame）
+        bar_data: 股票价格数据（多级索引DataFrame）
         portfolio_weights: 投资组合权重矩阵
         adjust: 复权类型（'post'或'none'）
 
     返回:
-        开盘价DataFrame（日期为行索引，股票代码为列索引）
+        开盘价DataFrame（日期为行索引，股票代码为列索引）p
     """
 
     # 计算时间范围：开始日期，结束日期
@@ -74,20 +74,20 @@ def get_stock_bars(stock_price_data, portfolio_weights, adjust):
 
     # 获取股票列表
     stock_list = portfolio_weights.columns.tolist()
-    print(f"股票数量: {len(stock_list)}")
+    print(f"portfolio_weights中的股票数量: {len(stock_list)}")
 
-    # 获取stock_price_data中所有的股票代码并去重
-    stock_book = stock_price_data.index.get_level_values("order_book_id").unique()
-    print(f"stock_price_data中的股票数量: {len(stock_book)}")
+    # 获取bar_data中所有的股票代码并去重
+    stock_book = bar_data.index.get_level_values("order_book_id").unique()
+    print(f"bar_data中的股票数量: {len(stock_book)}")
 
     # 按时间范围和股票列表筛选数据
-    filtered_data = stock_price_data.loc[
-        (stock_price_data.index.get_level_values("order_book_id").isin(stock_list))
-        & (stock_price_data.index.get_level_values("datetime") >= start_date)
-        & (stock_price_data.index.get_level_values("datetime") <= end_date)
+    filtered_data = bar_data.loc[
+        (bar_data.index.get_level_values("order_book_id").isin(stock_list))
+        & (bar_data.index.get_level_values("datetime") >= start_date)
+        & (bar_data.index.get_level_values("datetime") <= end_date)
     ]
 
-    print(f"筛选后数据形状: {filtered_data.shape}")
+    print(f"filtered_data数据形状: {filtered_data.shape}")
 
     # 根据复权类型返回相应的开盘价数据
     if adjust == "post":
@@ -164,12 +164,10 @@ def backtest(
     daily_cash_yield = (1 + cash_annual_yield) ** (1 / 252) - 1
 
     # =========================== 数据结构初始化 ===========================
-    # 创建账户历史记录表，索引为所有交易日
+    # 创建账户历史记录表，索引为有信号的所有交易日
+    # 列1：账户总资产，列2：持仓市值，列3：现金账户余额
     account_history = pd.DataFrame(
         index=portfolio_weights.index,
-        # 列1：账户总资产
-        # 列2：持仓市值
-        # 列3：现金账户余额
         columns=["total_account_asset", "holding_market_cap", "cash_account"],
     )
     # 获取所有股票的开盘价格数据（未复权）
@@ -217,17 +215,14 @@ def backtest(
         # =========================== 仓位变动计算 ===========================
         ## 步骤1：计算持仓变动量（目标持仓 - 历史持仓）
         # fill_value=0 确保新增股票（历史持仓为空）和清仓股票（目标持仓为空）都能正确计算
-        holdings_change_raw = target_holdings.sub(
-            previous_holdings, fill_value=0
-        )  # 计算原始持仓变动量
+        holdings_change_raw = target_holdings.sub(previous_holdings, fill_value=0)
 
         ## 步骤2：过滤掉无变动的股票（变动量为0的股票）
         # 将变动量为0的股票标记为NaN，然后删除，只保留需要调仓的股票
         holdings_change_filtered = holdings_change_raw.replace(0, np.nan)
 
-        ## 步骤3：获取最终的交易执行列表
+        ## 步骤3：删除NaN，获取最终的交易执行列表
         # 正数表示需要买入的股数，负数表示需要卖出的股数
-        # 删除NaN，只保留需要执行的交易
         trades_to_execute = holdings_change_filtered.dropna()
 
         # 获取当前调仓日的所有股票开盘价
@@ -274,17 +269,15 @@ def backtest(
         # 计算期间现金账户的复利增长（按日计息）
         cash_balance = pd.Series(
             [
-                initial_cash_balance
-                * ((1 + daily_cash_yield) ** (day + 1))  # 复利计息公式
+                initial_cash_balance * ((1 + daily_cash_yield) ** (day + 1))
                 for day in range(0, len(portfolio_market_value))
-            ],  # 对每一天计算
+            ],
             index=portfolio_market_value.index,
-        )  # 使用相同的日期索引
+        )
 
         # =========================== 计算账户总资产 ===========================
-        total_portfolio_value = (
-            portfolio_market_value + cash_balance
-        )  # 总资产 = 持仓市值 + 现金余额
+        # 总资产 = 持仓市值 + 现金余额
+        total_portfolio_value = portfolio_market_value + cash_balance
 
         # =========================== 更新历史数据为下一次调仓做准备 ===========================
         previous_holdings = target_holdings  # 更新历史持仓为当前目标持仓
@@ -293,7 +286,7 @@ def backtest(
         ]  # 更新可用资金为下一调仓日的账户总值
 
         # =========================== 保存账户历史记录 ===========================
-        # 将当前期间的账户数据保存到历史记录中（保疙2位小数）
+        # 将当前期间的账户数据保存到历史记录中（保留2位小数）
         account_history.loc[
             rebalance_date:next_rebalance_date, "total_account_asset"
         ] = round(total_portfolio_value, 2)
@@ -509,14 +502,6 @@ def get_performance_analysis(
         "盈亏比": round(Profit_Lose_Ratio, 4),
     }
 
-    performance_annual_performance = (
-        performance_cumnet.pct_change()
-        .resample("Y")
-        .apply(lambda x: (1 + x).prod() - 1)
-        .T
-    )
-    print(performance_annual_performance)
-
     # 创建分离式策略报告：收益曲线图 + 绩效指标表
     import matplotlib.pyplot as plt
     from matplotlib import rcParams
@@ -535,13 +520,17 @@ def get_performance_analysis(
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
 
         # 分别为收益曲线和指标表格创建独立目录
-        charts_dir = "/Users/didi/KDCJ/deep_model/outputs/without_rolling/performance_charts"
-        tables_dir = "/Users/didi/KDCJ/deep_model/outputs/without_rolling/metrics_tables"
+        charts_dir = (
+            "/Users/didi/KDCJ/deep_model/outputs/without_rolling/performance_charts"
+        )
+        tables_dir = (
+            "/Users/didi/KDCJ/deep_model/outputs/without_rolling/metrics_tables"
+        )
         os.makedirs(charts_dir, exist_ok=True)
         os.makedirs(tables_dir, exist_ok=True)
 
-        chart_filename = f"{signal_end_date}_{rebalance_frequency}_{factor_name}_{rank_n}_{start_date}_{end_date}_{timestamp}_chart.png"
-        table_filename = f"{signal_end_date}_{rebalance_frequency}_{factor_name}_{rank_n}_{start_date}_{end_date}_{timestamp}_table.png"
+        chart_filename = f"signal_end_{signal_end_date}_{rebalance_frequency}_{rank_n}_{start_date}_{end_date}_chart.png"
+        table_filename = f"signal_end_{signal_end_date}_{rebalance_frequency}_{rank_n}_{start_date}_{end_date}_table.png"
         chart_path = os.path.join(charts_dir, chart_filename)
         table_path = os.path.join(tables_dir, table_filename)
 
@@ -581,7 +570,7 @@ def get_performance_analysis(
 
     # 设置主图样式
     ax1.set_title(
-        f"{factor_name}_{rank_n}_收益曲线分析",
+        f"signal_end_{signal_end_date}_{rebalance_frequency}_{rank_n}_{start_date}_{end_date}_{timestamp}_收益曲线分析",
         fontsize=18,
         fontweight="bold",
         pad=20,
@@ -613,21 +602,56 @@ def get_performance_analysis(
     fig2, ax3 = plt.subplots(figsize=(12, 16))  # 竖向布局，适合表格
     ax3.axis("off")
 
+    # 计算年度收益
+    annual_returns = (
+        performance_cumnet.pct_change()
+        .resample("Y")
+        .apply(lambda x: (1 + x).prod() - 1)
+    )
+
+    # 如果annual_returns是DataFrame，只取strategy列
+    if isinstance(annual_returns, pd.DataFrame):
+        annual_returns = annual_returns["strategy"]
+
     # 准备表格数据
     result_df = pd.DataFrame([result]).T
     result_df.columns = ["数值"]
 
-    # 创建表格数据
+    # 处理年度收益数据（一次性完成DataFrame和表格数据的准备）
+    def format_year(year):
+        return (
+            year.strftime("%Y年") if hasattr(year, "strftime") else f"{str(year)[:4]}年"
+        )
+
+    annual_dict = {
+        "=== 年度收益 ===": "",
+        **{format_year(year): ret for year, ret in annual_returns.items()},
+    }
+
+    # 创建年度数据的DataFrame并合并到result_df
+    annual_df = pd.DataFrame([annual_dict]).T
+    annual_df.columns = ["数值"]
+
+    # 添加空行分隔并合并所有数据
+    separator_df = pd.DataFrame({"数值": [""]}, index=[""])
+    result_df = pd.concat([result_df, separator_df, annual_df])
+
+    # 创建表格数据（result_df已包含所有数据）
     table_data = []
     for idx, row in result_df.iterrows():
-        table_data.append([idx, f"{row['数值']:.4f}"])
+        # 对于空行和标题行，不进行数值格式化
+        if row["数值"] == "" or idx == "=== 年度收益 ===":
+            table_data.append([idx, str(row["数值"])])
+        else:
+            table_data.append([idx, f"{row['数值']:.4f}"])
 
-    # 绘制表格
+    # 绘制表格（调整位置给标题留出空间）
     table = ax3.table(
         cellText=table_data,
         colLabels=["绩效指标", "数值"],
         cellLoc="left",
-        loc="center",
+        loc="upper center",
+        bbox=[0, 0.05, 1, 0.85],  # [x, y, width, height] 给标题留出上方空间
         colWidths=[0.7, 0.3],
     )
 
@@ -649,19 +673,20 @@ def get_performance_analysis(
         # 设置数值列的字体为粗体
         table[(i, 1)].set_text_props(weight="bold")
 
-    # 添加标题
+    # 添加标题（调整位置和字体大小）
     ax3.text(
         0.5,
-        0.95,
-        f"{factor_name}_{rank_n}_绩效指标表",
+        0.98,  # 调整到更靠近顶部的位置
+        f"signal_end_{signal_end_date}_{rebalance_frequency}_{rank_n}_{start_date}_{end_date}_{timestamp}_绩效指标表",
         transform=ax3.transAxes,
-        fontsize=18,
+        fontsize=14,  # 稍微减小字体避免超出边界
         fontweight="bold",
         ha="center",
         va="top",
+        wrap=True,  # 允许文本换行
     )
 
-    plt.tight_layout()
+    # plt.tight_layout()  # 注释掉避免影响自定义布局
 
     # 保存绩效指标表
     if factor_name and portfolio_weights is not None:
@@ -674,6 +699,6 @@ def get_performance_analysis(
         plt.close()
 
     # 打印结果表格到控制台
-    print(pd.DataFrame([result]).T)
+    print(result_df)
 
     return performance_cumnet, result
