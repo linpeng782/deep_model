@@ -516,7 +516,17 @@ def rolling_backtest(
 
 
 # 回测绩效指标计算
-def get_performance_analysis(account_result, rf=0.03, benchmark_index="000985.XSHG"):
+def get_performance_analysis(
+    account_result,
+    rf=0.03,
+    benchmark_index="000985.XSHG",
+    portfolio_weights=None,
+    holding_months=None,
+    factor_name=None,
+    rank_n=None,
+    save_path=None,
+    show_plot=False,
+):
 
     # 加入基准
     performance = pd.concat(
@@ -663,109 +673,164 @@ def get_performance_analysis(account_result, rf=0.03, benchmark_index="000985.XS
     }
 
     result_df = pd.DataFrame(list(result.items()), columns=["指标", "数值"])
-    return performance_cumnet, result_df
 
-
-def plot_backtest_performance(
-    performance_cumnet, benchmark_index, figsize=(12, 8), save_chart=True
-):
-    """
-    绘制策略回测结果图表
-
-    参数:
-    performance_cumnet: DataFrame, 包含策略、基准和alpha的累计收益数据
-    benchmark_index: str, 基准指数代码
-    figsize: tuple, 图表大小
-    save_chart: bool, 是否保存图表到文件
-
-    返回:
-    fig: matplotlib图表对象
-    """
+    # 创建分离式策略报告：收益曲线图 + 绩效指标表
+    import matplotlib.pyplot as plt
+    from matplotlib import rcParams
     import os
-    from datetime import datetime
 
     # 设置中文字体
-    plt.rcParams["font.sans-serif"] = ["SimHei", "Arial Unicode MS", "DejaVu Sans"]
-    plt.rcParams["axes.unicode_minus"] = False
+    rcParams["font.sans-serif"] = ["SimHei", "Arial Unicode MS", "DejaVu Sans"]
+    rcParams["axes.unicode_minus"] = False
 
-    # 创建图表和双轴
-    fig, ax1 = plt.subplots(figsize=figsize)
+    # 生成文件名和路径
+    if factor_name and portfolio_weights is not None:
+        from datetime import datetime
+
+        start_date = portfolio_weights.index[0].strftime("%Y-%m-%d")
+        end_date = portfolio_weights.index[-1].strftime("%Y-%m-%d")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+
+        # 分别为收益曲线和指标表格创建独立目录
+        charts_dir = "/Users/didi/KDCJ/deep_model/outputs/rolling/performance_charts"
+        tables_dir = "/Users/didi/KDCJ/deep_model/outputs/rolling/metrics_tables"
+        os.makedirs(charts_dir, exist_ok=True)
+        os.makedirs(tables_dir, exist_ok=True)
+
+        chart_filename = f"rolling_{holding_months}_{factor_name}_{rank_n}_{benchmark_index}_{start_date}_{end_date}_{timestamp}_chart.png"
+        table_filename = f"rolling_{holding_months}_{factor_name}_{rank_n}_{benchmark_index}_{start_date}_{end_date}_{timestamp}_table.png"
+        chart_path = os.path.join(charts_dir, chart_filename)
+        table_path = os.path.join(tables_dir, table_filename)
+
+    # ==================== 图1：收益曲线图 ====================
+    fig1, ax1 = plt.subplots(figsize=(16, 9))  # 16:9比例，更适合时间序列
+
+    # 绘制策略和基准收益曲线
+    ax1.plot(
+        performance_cumnet.index,
+        performance_cumnet[strategy_name],
+        color="#1f77b4",
+        linewidth=2.5,
+        label="策略收益",
+        alpha=0.9,
+    )
+    ax1.plot(
+        performance_cumnet.index,
+        performance_cumnet[benchmark_name],
+        color="#ff7f0e",
+        linewidth=2.5,
+        label="基准收益",
+        alpha=0.9,
+    )
+
+    # 创建第二个y轴显示超额收益
     ax2 = ax1.twinx()
-
-    # 获取列名
-    columns = performance_cumnet.columns.tolist()
-    strategy_col = columns[0]  # 策略列
-    benchmark_col = columns[1]  # 基准列
-    alpha_col = columns[2]  # 超额收益列
-
-    # 绘制左轴：策略和基准累计收益
-    line1 = ax1.plot(
+    ax2.plot(
         performance_cumnet.index,
-        performance_cumnet[strategy_col],
-        color="red",
+        performance_cumnet[alpha_name],
+        color="#2ca02c",
         linewidth=2,
-        label="策略",
-    )
-    line2 = ax1.plot(
-        performance_cumnet.index,
-        performance_cumnet[benchmark_col],
-        color="blue",
-        linewidth=2,
-        label=benchmark_index,
-    )
-
-    # 绘制右轴：超额累计收益
-    line3 = ax2.plot(
-        performance_cumnet.index,
-        performance_cumnet[alpha_col],
-        color="green",
-        linewidth=2,
+        alpha=0.7,
         label="超额收益",
     )
+    ax2.set_ylabel("超额收益", color="#2ca02c", fontsize=12)
+    ax2.tick_params(axis="y", labelcolor="#2ca02c")
 
-    # 设置左轴标签和格式
-    ax1.set_xlabel("日期", fontsize=12)
-    ax1.set_ylabel("策略累计收益", fontsize=12, color="red")
-    ax1.tick_params(axis="y", labelcolor="black")
-    ax1.grid(True, alpha=0.3)
-
-    # 设置右轴标签和格式
-    ax2.set_ylabel("超额累计收益", fontsize=12, color="green")
-    ax2.tick_params(axis="y", labelcolor="black")
-
-    # 设置图表标题
-    plt.title(
-        f"策略回测（对应基准：{benchmark_index}）",
-        fontsize=14,
+    # 设置主图样式
+    ax1.set_title(
+        f"rolling_{holding_months}_{factor_name}_{rank_n}_收益曲线分析",
+        fontsize=18,
         fontweight="bold",
         pad=20,
     )
+    ax1.set_xlabel("日期", fontsize=12)
+    ax1.set_ylabel("累积收益", fontsize=12)
+    ax1.grid(True, alpha=0.3, linestyle="--")
+    ax1.legend(loc="upper left", fontsize=11)
+    ax2.legend(loc="upper right", fontsize=11)
 
-    # 合并图例
-    lines = line1 + line2 + line3
-    labels = [l.get_label() for l in lines]
-    ax1.legend(lines, labels, loc="upper left", fontsize=10)
+    # 美化图表
+    ax1.spines["top"].set_visible(False)
+    ax1.spines["right"].set_visible(False)
+    ax2.spines["top"].set_visible(False)
 
-    # 调整布局
     plt.tight_layout()
 
-    # 保存图表到文件
-    if save_chart:
-        # 获取当前脚本所在目录
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        # 创建保存图片的文件夹
-        output_dir = os.path.join(current_dir, "backtest_charts")
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-            print(f"已创建文件夹: {output_dir}")
+    # 保存收益曲线图
+    if factor_name and portfolio_weights is not None:
+        plt.savefig(chart_path, dpi=300, bbox_inches="tight", facecolor="white")
+        print(f"收益曲线图已保存到: {chart_path}")
 
-        # 生成带时间戳的文件名（精确到分钟）
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-        filename = f"策略回测结果_{benchmark_index}_{timestamp}.png"
-        filepath = os.path.join(output_dir, filename)
+    if show_plot:
+        plt.show()
+    else:
+        plt.close()
 
-        # 保存图片
-        fig.savefig(filepath, dpi=300, bbox_inches="tight", facecolor="white")
-        print(f"图片已保存至: {filepath}")
+    # ==================== 图2：绩效指标表 ====================
+    fig2, ax3 = plt.subplots(figsize=(12, 16))  # 竖向布局，适合表格
+    ax3.axis("off")
 
-    return fig
+    # 准备表格数据
+    result_df = pd.DataFrame([result]).T
+    result_df.columns = ["数值"]
+
+    # 创建表格数据
+    table_data = []
+    for idx, row in result_df.iterrows():
+        table_data.append([idx, f"{row['数值']:.4f}"])
+
+    # 绘制表格
+    table = ax3.table(
+        cellText=table_data,
+        colLabels=["绩效指标", "数值"],
+        cellLoc="left",
+        loc="center",
+        colWidths=[0.7, 0.3],
+    )
+
+    # 设置表格样式
+    table.auto_set_font_size(False)
+    table.set_fontsize(12)  # 更大的字体
+    table.scale(1, 2.2)  # 更大的行高
+
+    # 设置表头样式
+    for i in range(2):
+        table[(0, i)].set_facecolor("#4472C4")
+        table[(0, i)].set_text_props(weight="bold", color="white", size=14)
+
+    # 设置交替行颜色和样式
+    for i in range(1, len(table_data) + 1):
+        if i % 2 == 0:
+            for j in range(2):
+                table[(i, j)].set_facecolor("#F8F9FA")
+        # 设置数值列的字体为粗体
+        table[(i, 1)].set_text_props(weight="bold")
+
+    # 添加标题
+    ax3.text(
+        0.5,
+        0.95,
+        f"{factor_name}_{rank_n}_绩效指标表",
+        transform=ax3.transAxes,
+        fontsize=18,
+        fontweight="bold",
+        ha="center",
+        va="top",
+    )
+
+    plt.tight_layout()
+
+    # 保存绩效指标表
+    if factor_name and portfolio_weights is not None:
+        plt.savefig(table_path, dpi=300, bbox_inches="tight", facecolor="white")
+        print(f"绩效指标表已保存到: {table_path}")
+
+    if show_plot:
+        plt.show()
+    else:
+        plt.close()
+
+    # 打印结果表格到控制台
+    print(pd.DataFrame([result]).T)
+
+    return performance_cumnet, result

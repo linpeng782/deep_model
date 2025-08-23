@@ -348,11 +348,13 @@ def get_performance_analysis(
     account_result,
     rf=0.03,
     benchmark_index="000985.XSHG",
+    rebalance_frequency=252,
     factor_name=None,
     portfolio_weights=None,
     rank_n=None,
+    signal_end_date=None,
     save_path=None,
-    show_plot=True,
+    show_plot=False,
 ):
 
     # 加入基准
@@ -507,6 +509,14 @@ def get_performance_analysis(
         "盈亏比": round(Profit_Lose_Ratio, 4),
     }
 
+    performance_annual_performance = (
+        performance_cumnet.pct_change()
+        .resample("Y")
+        .apply(lambda x: (1 + x).prod() - 1)
+        .T
+    )
+    print(performance_annual_performance)
+
     # 创建分离式策略报告：收益曲线图 + 绩效指标表
     import matplotlib.pyplot as plt
     from matplotlib import rcParams
@@ -525,13 +535,13 @@ def get_performance_analysis(
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
 
         # 分别为收益曲线和指标表格创建独立目录
-        charts_dir = "/Users/didi/KDCJ/deep_model/outputs/reports/performance_charts"
-        tables_dir = "/Users/didi/KDCJ/deep_model/outputs/reports/metrics_tables"
+        charts_dir = "/Users/didi/KDCJ/deep_model/outputs/without_rolling/performance_charts"
+        tables_dir = "/Users/didi/KDCJ/deep_model/outputs/without_rolling/metrics_tables"
         os.makedirs(charts_dir, exist_ok=True)
         os.makedirs(tables_dir, exist_ok=True)
 
-        chart_filename = f"{factor_name}_{rank_n}_{benchmark_index}_{start_date}_{end_date}_{timestamp}_performance_chart.png"
-        table_filename = f"{factor_name}_{rank_n}_{benchmark_index}_{start_date}_{end_date}_{timestamp}_metrics_table.png"
+        chart_filename = f"{signal_end_date}_{rebalance_frequency}_{factor_name}_{rank_n}_{start_date}_{end_date}_{timestamp}_chart.png"
+        table_filename = f"{signal_end_date}_{rebalance_frequency}_{factor_name}_{rank_n}_{start_date}_{end_date}_{timestamp}_table.png"
         chart_path = os.path.join(charts_dir, chart_filename)
         table_path = os.path.join(tables_dir, table_filename)
 
@@ -571,7 +581,7 @@ def get_performance_analysis(
 
     # 设置主图样式
     ax1.set_title(
-        f'{factor_name}_{rank_n}_收益曲线分析',
+        f"{factor_name}_{rank_n}_收益曲线分析",
         fontsize=18,
         fontweight="bold",
         pad=20,
@@ -643,7 +653,7 @@ def get_performance_analysis(
     ax3.text(
         0.5,
         0.95,
-        f'{factor_name}_{rank_n}_绩效指标表',
+        f"{factor_name}_{rank_n}_绩效指标表",
         transform=ax3.transAxes,
         fontsize=18,
         fontweight="bold",
