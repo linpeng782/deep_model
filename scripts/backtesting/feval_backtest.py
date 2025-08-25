@@ -51,7 +51,7 @@ if __name__ == "__main__":
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
     signal_end_date = "2025-08-19"
-    backtest_end_date = "2025-06-19"
+    backtest_end_date = "2025-08-19"
 
     rank_n = 10
     rebalance_frequency = 252

@@ -87,8 +87,6 @@ def get_stock_bars(bar_data, portfolio_weights, adjust):
         & (bar_data.index.get_level_values("datetime") <= end_date)
     ]
 
-    print(f"filtered_data数据形状: {filtered_data.shape}")
-
     # 根据复权类型返回相应的开盘价数据
     if adjust == "post":
         open_price = filtered_data["开盘价"].unstack("order_book_id")
@@ -183,31 +181,34 @@ def backtest(
             ]
         )
     )
-    # 生成调仓日期列表：每 rebalance_frequency 天调仓一次
-    # 确保最后一天也被包含在调仓日中
+
+    # 所有有投资组合权重信号的交易日期
+    all_signal_dates = portfolio_weights.index.tolist()
+    # 生成调仓日期列表：每rebalance_frequency天调仓一次，最后一天也被包含在调仓日中
     rebalance_dates = sorted(
-        set(
-            portfolio_weights.index.tolist()[::rebalance_frequency]
-            + [portfolio_weights.index[-1]]
-        )
+        set(all_signal_dates[3::rebalance_frequency] + [all_signal_dates[-1]])
     )
 
     # =========================== 开始逐期调仓循环 ===========================
     for i in tqdm(range(0, len(rebalance_dates) - 1)):
+        print(f"调仓日期: {rebalance_dates[i]}")
+        # if rebalance_dates[i] == pd.Timestamp("2016-02-02"):
+        #     breakpoint()
         rebalance_date = rebalance_dates[i]  # 当前调仓日期
         next_rebalance_date = rebalance_dates[i + 1]  # 下一个调仓日期
 
-        # =========================== 获取当前调仓日的目标权重 ===========================
+        # =========================== 计算当前调仓日的目标持仓 ===========================
         # 获取当前调仓日的目标权重，并删除缺失值
         current_target_weights = portfolio_weights.loc[rebalance_date].dropna()
         # 获取目标股票列表
         target_stocks = current_target_weights.index.tolist()
-
-        # =========================== 计算目标持仓数量 ===========================
+        # 获取目标股票的开盘价
+        target_prices = open_prices.loc[rebalance_date, target_stocks]
+        # 计算目标持仓数量
         target_holdings = calculate_target_holdings(
             current_target_weights,
             cash,
-            open_prices.loc[rebalance_date, target_stocks],
+            target_prices,
             min_trade_units.loc[target_stocks],
             sell_cost_rate,
         )
@@ -217,22 +218,17 @@ def backtest(
         # fill_value=0 确保新增股票（历史持仓为空）和清仓股票（目标持仓为空）都能正确计算
         holdings_change_raw = target_holdings.sub(previous_holdings, fill_value=0)
 
-        ## 步骤2：过滤掉无变动的股票（变动量为0的股票）
-        # 将变动量为0的股票标记为NaN，然后删除，只保留需要调仓的股票
+        ## 步骤2：过滤掉无变动的股票（变动量为0的股票,用np.nan替换）
         holdings_change_filtered = holdings_change_raw.replace(0, np.nan)
 
         ## 步骤3：删除NaN，获取最终的交易执行列表
-        # 正数表示需要买入的股数，负数表示需要卖出的股数
         trades_to_execute = holdings_change_filtered.dropna()
 
         # 获取当前调仓日的所有股票开盘价
         current_prices = open_prices.loc[rebalance_date]
 
         # =========================== 计算交易成本 ===========================
-        # 计算总交易成本：交易金额 = 价格 * 交易股数
-        # 计算每笔交易的交易金额
-        # 对每笔交易计算手续费
-        # 求和得到总手续费
+        # 计算总交易成本：交易金额 = 价格 * 交易股数，根据交易金额计算手续费
         total_transaction_cost = (
             (current_prices * trades_to_execute)
             .apply(
@@ -255,10 +251,55 @@ def backtest(
             axis=1, how="all"
         )
 
+        # =========================== 检测目标持仓股票的价格缺失情况 ===========================
+        # 只关注目标持仓股票的价格数据质量
+        target_simulated_prices = simulated_prices[target_stocks]
+
+        # 检测哪些目标股票在调仓期间有价格缺失
+        nan_mask = target_simulated_prices.isna()
+        stocks_with_nan = nan_mask.any(axis=0)  # 每只股票是否有NaN
+
+        if stocks_with_nan.any():
+            affected_stocks = stocks_with_nan[stocks_with_nan].index.tolist()
+            total_target_stocks = len(target_stocks)
+            affected_count = len(affected_stocks)
+
+            print(
+                f"警告：调仓日 {rebalance_date.strftime('%Y-%m-%d')} 发现目标持仓股票价格数据缺失："
+            )
+            print(f"  受影响股票数量: {affected_count} / {total_target_stocks}")
+
+            for stock in affected_stocks:
+                nan_dates = nan_mask[stock][nan_mask[stock]].index
+                nan_count = len(nan_dates)
+                print(f"  - {stock}: {nan_count}个交易日缺失价格")
+
+                # 智能显示缺失日期：少于5个显示全部，多于5个显示首尾
+                if nan_count <= 5:
+                    date_str = ", ".join([d.strftime("%m-%d") for d in nan_dates])
+                else:
+                    first_dates = ", ".join(
+                        [d.strftime("%m-%d") for d in nan_dates[:2]]
+                    )
+                    last_dates = ", ".join(
+                        [d.strftime("%m-%d") for d in nan_dates[-2:]]
+                    )
+                    date_str = f"{first_dates}, ..., {last_dates}"
+                print(f"    缺失日期: {date_str}")
+
+            # 计算影响比例（基于目标权重）
+            affected_weights = current_target_weights[affected_stocks]
+            impact_ratio = affected_weights.sum() * 100
+            print(f"  影响比例: {impact_ratio:.2f}% 的目标持仓权重")
+            print()
+
         # =========================== 计算投资组合市值 ===========================
         # 投资组合市值 = 每只股票的(模拟未复权价格 * 持仓数量)的总和
-        # 按日计算投资组合市值
-        portfolio_market_value = (simulated_prices * target_holdings).sum(axis=1)
+        # 处理价格缺失的情况：当价格为NaN时，使用前一日价格填充
+        simulated_prices_filled = simulated_prices.ffill()
+
+        # 按日计算投资组合市值（忽略NaN值）
+        portfolio_market_value = (simulated_prices_filled * target_holdings).sum(axis=1)
 
         # =========================== 计算现金账户余额 ===========================
         # 初始现金余额 = 可用资金 - 交易成本 - 初始投资金额
@@ -280,10 +321,10 @@ def backtest(
         total_portfolio_value = portfolio_market_value + cash_balance
 
         # =========================== 更新历史数据为下一次调仓做准备 ===========================
-        previous_holdings = target_holdings  # 更新历史持仓为当前目标持仓
-        cash = total_portfolio_value.loc[
-            next_rebalance_date
-        ]  # 更新可用资金为下一调仓日的账户总值
+        # 更新历史持仓为当前目标持仓
+        previous_holdings = target_holdings
+        # 更新可用资金为下一调仓日的账户总值
+        cash = total_portfolio_value.loc[next_rebalance_date]
 
         # =========================== 保存账户历史记录 ===========================
         # 将当前期间的账户数据保存到历史记录中（保留2位小数）
@@ -565,8 +606,14 @@ def get_performance_analysis(
         alpha=0.7,
         label="超额收益",
     )
-    ax2.set_ylabel("超额收益", color="#2ca02c", fontsize=12)
-    ax2.tick_params(axis="y", labelcolor="#2ca02c")
+
+    # 设置固定的y轴范围
+    ax1.set_ylim(0, 8)  # 左轴累积收益最大值设为10
+    ax2.set_ylim(0, 20)  # 右轴超额收益最大值设为20
+
+    # 统一颜色标签 - 右轴标签颜色与左轴保持一致
+    ax2.set_ylabel("超额收益", color="black", fontsize=12)
+    ax2.tick_params(axis="y", labelcolor="black")
 
     # 设置主图样式
     ax1.set_title(
