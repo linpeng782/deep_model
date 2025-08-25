@@ -186,7 +186,7 @@ def backtest(
     all_signal_dates = portfolio_weights.index.tolist()
     # 生成调仓日期列表：每rebalance_frequency天调仓一次，最后一天也被包含在调仓日中
     rebalance_dates = sorted(
-        set(all_signal_dates[3::rebalance_frequency] + [all_signal_dates[-1]])
+        set(all_signal_dates[::rebalance_frequency] + [all_signal_dates[-1]])
     )
 
     # =========================== 开始逐期调仓循环 ===========================
@@ -199,14 +199,14 @@ def backtest(
 
         # =========================== 计算当前调仓日的目标持仓 ===========================
         # 获取当前调仓日的目标权重，并删除缺失值
-        current_target_weights = portfolio_weights.loc[rebalance_date].dropna()
+        target_weights = portfolio_weights.loc[rebalance_date].dropna()
         # 获取目标股票列表
-        target_stocks = current_target_weights.index.tolist()
+        target_stocks = target_weights.index.tolist()
         # 获取目标股票的开盘价
         target_prices = open_prices.loc[rebalance_date, target_stocks]
         # 计算目标持仓数量
         target_holdings = calculate_target_holdings(
-            current_target_weights,
+            target_weights,
             cash,
             target_prices,
             min_trade_units.loc[target_stocks],
@@ -288,7 +288,7 @@ def backtest(
                 print(f"    缺失日期: {date_str}")
 
             # 计算影响比例（基于目标权重）
-            affected_weights = current_target_weights[affected_stocks]
+            affected_weights = target_weights[affected_stocks]
             impact_ratio = affected_weights.sum() * 100
             print(f"  影响比例: {impact_ratio:.2f}% 的目标持仓权重")
             print()
