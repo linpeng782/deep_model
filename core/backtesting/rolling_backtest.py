@@ -35,6 +35,34 @@ import logging
 logging.getLogger().setLevel(logging.ERROR)
 
 
+def calculate_target_holdings(
+    target_weights, available_cash, stock_prices, min_trade_units, sell_cost_rate
+):
+    """
+    计算目标持仓数量
+
+    :param target_weights: 目标权重 Series
+    :param available_cash: 可用资金
+    :param stock_prices: 股票价格 Series
+    :param min_trade_units: 最小交易单位 Series
+    :param sell_cost_rate: 卖出成本费率（用于预留手续费）
+    :return: 目标持仓数量 Series
+    """
+    # 按权重分配资金
+    allocated_cash = target_weights * available_cash
+
+    # 计算调整后价格（预留卖出手续费）
+    adjusted_prices = stock_prices * (1 + sell_cost_rate)
+
+    # 计算可购买的最小交易单位数量（向下取整）
+    units_to_buy = allocated_cash / adjusted_prices // min_trade_units
+
+    # 转换为实际股数
+    target_holdings = units_to_buy * min_trade_units
+
+    return target_holdings
+
+
 # 获取指定期间内每个月的第一个交易日
 def get_monthly_first_trading_days(start_date, end_date):
     """
@@ -60,21 +88,21 @@ def get_monthly_first_trading_days(start_date, end_date):
 
 
 # 获取到期日期
-def get_expire_date(start_month_idx, holding_months, monthly_first_days):
+def get_expire_date(start_month_idx, portfolio_count, monthly_first_days):
     """
-    根据建仓月份索引和持仓月数，计算到期日期
+    根据建仓月份索引和组合数量，计算到期日期
     :param start_month_idx: 建仓月份在monthly_first_days中的索引
-    :param holding_months: 持仓月数
+    :param portfolio_count: 组合数量（也是持仓月数）
     :param monthly_first_days: 每月第一个交易日列表
     :return: 到期日期（pd.Timestamp）
     """
-    expire_month_idx = start_month_idx + holding_months
+    expire_month_idx = start_month_idx + portfolio_count
     if expire_month_idx < len(monthly_first_days):
         return pd.Timestamp(monthly_first_days[expire_month_idx])
     else:
         # 如果超出了monthly_first_days的范围，返回最后一个日期后的N个月
         last_date = pd.Timestamp(monthly_first_days[-1])
-        return last_date + relativedelta(months=holding_months)
+        return last_date + relativedelta(months=portfolio_count)
 
 
 # 计算单笔交易的手续费
@@ -135,8 +163,6 @@ def get_stock_bars(stock_price_data, portfolio_weights, adjust):
         & (stock_price_data.index.get_level_values("datetime") <= end_date)
     ]
 
-    print(f"筛选后数据形状: {filtered_data.shape}")
-
     # 根据复权类型返回相应的开盘价数据
     if adjust == "post":
         open_price = filtered_data["开盘价"].unstack("order_book_id")
@@ -174,7 +200,7 @@ def get_benchmark(df, benchmark, benchmark_type="mcw"):
 def rolling_backtest(
     portfolio_weights,
     bars_df,
-    holding_months=12,
+    portfolio_count=12,
     initial_capital=10000 * 10000,
     stamp_tax_rate=0.0005,
     transfer_fee_rate=0.0001,
@@ -183,10 +209,10 @@ def rolling_backtest(
     cash_annual_yield=0.02,
 ):
     """
-    N个月滚动持仓回测框架
+    N个组合滚动持仓回测框架
 
     :param portfolio_weights: 投资组合权重矩阵 -> DataFrame
-    :param holding_months: 持仓月数 -> int (默认12个月，可设置为2,3,4等进行快速调试)
+    :param portfolio_count: 组合数量 -> int (默认12个组合，每个持仓12个月。可设置为2,3,4等进行快速调试)
     :param initial_capital: 初始资本 -> float
     :param stamp_tax_rate: 印花税率 -> float
     :param transfer_fee_rate: 过户费率 -> float
@@ -197,8 +223,8 @@ def rolling_backtest(
     """
 
     # =========================== 基础参数初始化 ===========================
-    # 每月投入资金（总资金的 1/holding_months）
-    monthly_capital = initial_capital / holding_months
+    # 每个组合的资金分配（总资金的 1/portfolio_count）
+    portfolio_capital = initial_capital / portfolio_count
     # 买入成本费率：过户费 + 佣金
     buy_cost_rate = transfer_fee_rate + commission_rate
     # 卖出成本费率：印花税 + 过户费 + 佣金
@@ -224,29 +250,27 @@ def rolling_backtest(
         dict([(stock, 100) for stock in portfolio_weights.columns.tolist()])
     )
 
-    # 获取每月第一个交易日
-    start_date = portfolio_weights.index.min()
-    end_date = portfolio_weights.index.max()
-    monthly_first_days = get_monthly_first_trading_days(start_date, end_date)
+    # 获取信号每月第一个交易日
+    signal_start_date = portfolio_weights.index.min()
+    signal_end_date = portfolio_weights.index.max()
+    monthly_first_days = get_monthly_first_trading_days(
+        signal_start_date, signal_end_date
+    )
 
-    # =========================== N个月组合管理 ===========================
-    # 存储N个月组合的信息
-    monthly_portfolios = {}
+    # =========================== N个组合管理 ===========================
+    # 存储N个组合的信息和历史记录
+    portfolios = {}
+    portfolio_histories = {}
 
-    # 初始化N个空组合
-    for i in range(holding_months):
-        monthly_portfolios[i] = {
+    # 初始化N个空组合及其历史记录
+    for i in range(portfolio_count):
+        portfolios[i] = {
             "holdings": pd.Series(dtype=float),  # 持仓股票及数量
             "cash": 0.0,  # 现金余额
             "start_date": None,  # 建仓日期
             "expire_date": None,  # 到期日期
             "is_active": False,  # 是否激活
         }
-
-    # =========================== 初始化组合历史记录存储 ===========================
-    # 为每个组合初始化空的历史记录列表
-    portfolio_histories = {}
-    for i in range(holding_months):
         portfolio_histories[i] = {
             "total_account_asset": [],
             "holding_market_cap": [],
@@ -254,161 +278,137 @@ def rolling_backtest(
         }
 
     # =========================== 开始逐月建仓和调仓 ===========================
-    portfolio_index = 0  # 当前使用的组合索引（0到holding_months-1循环）
+    portfolio_index = 0  # 当前使用的组合索引（0到portfolio_count-1循环）
 
     for month_idx, month_date_raw in enumerate(tqdm(monthly_first_days)):
 
         # 统一转换为pd.Timestamp类型
         rebalance_date = pd.Timestamp(month_date_raw)
 
-        # if rebalance_date == pd.Timestamp('2024-12-02'):
+        # if rebalance_date == pd.Timestamp("2017-01-03"):
         #     breakpoint()
 
-        # 检查该调仓日期是否在portfolio_weights的索引中
-        if rebalance_date not in portfolio_weights.index:
-            continue
-
         # 获取当前调仓日的目标权重
-        current_target_weights = portfolio_weights.loc[rebalance_date].dropna()
-        if len(current_target_weights) == 0:
-            continue
-
+        target_weights = portfolio_weights.loc[rebalance_date].dropna()
         # 获取当前调仓日的目标股票
-        target_stocks = current_target_weights.index.tolist()
-        # 获取当前调仓日的开盘价格
-        current_prices = open_prices.loc[rebalance_date]
+        target_stocks = target_weights.index.tolist()
+        # 计算目标股票的开盘价
+        target_prices = open_prices.loc[rebalance_date, target_stocks]
 
         # =========================== 处理当前组合，更新持仓 ===========================
-        current_portfolio = monthly_portfolios[portfolio_index]
+        current_portfolio = portfolios[portfolio_index]
 
         # 检查组合状态和到期情况
         if current_portfolio["is_active"]:
-            # 检查组合是否到期
-            if rebalance_date < current_portfolio["expire_date"]:
-                # 组合未到期，跳过操作，移动到下一个组合
-                portfolio_index = (portfolio_index + 1) % holding_months
-                continue
-
             # 组合到期，进行调仓
-            print(f"组合{portfolio_index}号到期调仓，日期：{rebalance_date}")
+            print(f"组合{portfolio_index}号到期调仓，调仓日期：{rebalance_date}")
 
-            # 从该组合的历史记录中获取上一期最后一天的总资产作为可用资金
-            if len(portfolio_histories[portfolio_index]["total_account_asset"]) > 0:
-                # 取最后一个时间段的最后一天的值
-                last_period_records = portfolio_histories[portfolio_index][
-                    "total_account_asset"
-                ][-1]
-                available_cash = last_period_records.iloc[-1]  # 最后一天的总资产
-            else:
-                # 如果没有历史记录，使用月度资金（理论上不应该发生）
-                available_cash = monthly_capital
-                print(f"警告：未找到历史记录，使用月度资金: {available_cash:.2f}")
+            # 取最后一个时间段的最后一天的值
+            last_period_records = portfolio_histories[portfolio_index][
+                "total_account_asset"
+            ][-1]
+            available_cash = last_period_records.loc[rebalance_date]  # 最后一天的总资产
 
             # 重置组合的到期日期（新的N个月周期）
             current_portfolio["expire_date"] = get_expire_date(
-                month_idx, holding_months, monthly_first_days
+                month_idx, portfolio_count, monthly_first_days
             )
             current_portfolio["start_date"] = rebalance_date  # 更新开始日期
 
         else:
             # 新建仓，使用固定的月度资金
-            print(f"组合{portfolio_index}号首次建仓，日期：{rebalance_date}")
-            available_cash = monthly_capital
+            print(f"组合{portfolio_index}号首次建仓，建仓日期：{rebalance_date}")
+            available_cash = portfolio_capital
             current_portfolio["is_active"] = True
             current_portfolio["start_date"] = rebalance_date
             # 计算到期日期（N个月后的第一个交易日）
             current_portfolio["expire_date"] = get_expire_date(
-                month_idx, holding_months, monthly_first_days
+                month_idx, portfolio_count, monthly_first_days
             )
 
         # =========================== 计算目标持仓 ===========================
         # 计算目标持仓数量（本次调仓需要买入的股票数量）
-        target_holdings = (
-            current_target_weights
-            * available_cash
-            / (current_prices.loc[target_stocks] * (1 + sell_cost_rate))
-            // min_trade_units.loc[target_stocks]
-        ) * min_trade_units.loc[target_stocks]
+        target_holdings = calculate_target_holdings(
+            target_weights,
+            available_cash,
+            target_prices,
+            min_trade_units.loc[target_stocks],
+            sell_cost_rate,
+        )
 
         # =========================== 计算持仓变动 ===========================
-        # 计算持仓变动量（目标持仓 - 当前持仓）
+        ## 步骤1：计算持仓变动量（目标持仓 - 历史持仓）
+        # fill_value=0 确保新增股票（历史持仓为空）和清仓股票（目标持仓为空）都能正确计算
         holdings_change_raw = target_holdings.sub(
             current_portfolio["holdings"], fill_value=0
         )
 
-        # 过滤掉无变动的股票
+        ## 步骤2：过滤掉无变动的股票（变动量为0的股票,用np.nan替换）
         holdings_change_filtered = holdings_change_raw.replace(0, np.nan)
+
+        ## 步骤3：删除NaN，获取最终的交易执行列表
         trades_to_execute = holdings_change_filtered.dropna()
 
+        # 获取当前调仓日的所有股票开盘价
+        current_prices = open_prices.loc[rebalance_date]
+
         # =========================== 执行交易并计算成本 ===========================
-        if len(trades_to_execute) > 0:
-            # 计算总交易成本
-            total_transaction_cost = (
-                (current_prices * trades_to_execute)
-                .apply(
-                    lambda x: calc_transaction_fee(
-                        x, min_transaction_fee, sell_cost_rate, buy_cost_rate
-                    )
+
+        # 计算总交易成本
+        total_transaction_cost = (
+            (current_prices * trades_to_execute)
+            .apply(
+                lambda x: calc_transaction_fee(
+                    x, min_transaction_fee, sell_cost_rate, buy_cost_rate
                 )
-                .sum()
             )
+            .sum()
+        )
 
-            # 更新持仓
-            current_portfolio["holdings"] = target_holdings
-
-            # 计算实际投资金额
-            actual_investment = (current_prices * target_holdings).sum()
-
-            # 更新现金余额
-            current_portfolio["cash"] = (
-                available_cash - actual_investment - total_transaction_cost
-            )
-        else:
-            # 无交易，只更新现金（可能有利息）
-            if current_portfolio["is_active"]:
-                current_portfolio["cash"] *= 1 + daily_cash_yield
+        # 更新持仓
+        current_portfolio["holdings"] = target_holdings
 
         # =========================== 价格复权调整 ===========================
         # 计算从建仓日到到期日的价格复权比率
-        start_date = rebalance_date
-        end_date = current_portfolio["expire_date"]
-        price_adjustment_ratio = (
-            adjusted_prices.loc[start_date:end_date] / adjusted_prices.loc[start_date]
-        )  # 复权比率 = 期间价格 / 起始价格
+        portfolio_start_date = rebalance_date
+        portfolio_end_date = current_portfolio["expire_date"]
 
-        # 将复权比率应用到建仓日开盘价，得到期间调整后价格
-        # 直接使用已有的current_prices（即rebalance_date当天的开盘价）
-        period_adjusted_prices = (
-            price_adjustment_ratio.T.mul(  # 转置以便于计算
-                current_prices, axis=0
-            )  # 乘以建仓日开盘价
-            .dropna(how="all")
-            .T
-        )  # 删除全为NaN的行并转置回来
+        period_adj_prices = adjusted_prices.loc[portfolio_start_date:portfolio_end_date]
+        base_adj_prices = adjusted_prices.loc[portfolio_start_date]
+        price_multipliers = period_adj_prices.div(base_adj_prices, axis=1)
+        simulated_prices = price_multipliers.mul(current_prices, axis=1).dropna(
+            axis=1, how="all"
+        )
+
+        # 处理价格缺失的情况：当价格为NaN时，使用前一日价格填充
+        simulated_prices_filled = simulated_prices.ffill()
 
         # =========================== 计算投资组合市值 ===========================
         # 投资组合市值 = 每只股票的(调整后价格 * 持仓数量)的总和
-        portfolio_market_value = (
-            period_adjusted_prices * current_portfolio["holdings"]
-        ).sum(
-            axis=1
-        )  # 按日计算投资组合市值
+        portfolio_market_value = (simulated_prices_filled * target_holdings).sum(axis=1)
 
         # =========================== 计算现金账户余额 ===========================
+
+        # 更新现金余额
+        current_portfolio["cash"] = (
+            available_cash
+            - total_transaction_cost
+            - portfolio_market_value.loc[rebalance_date]
+        )
+
         # 计算期间现金账户的复利增长（按日计息）
         cash_balance = pd.Series(
             [
                 current_portfolio["cash"]
-                * ((1 + daily_cash_yield) ** day)  # 复利计息公式
+                * ((1 + daily_cash_yield) ** (day + 1))  # 复利计息公式
                 for day in range(0, len(portfolio_market_value))
-            ],  # 对每一天计算
+            ],
             index=portfolio_market_value.index,
-        )  # 使用相同的日期索引
+        )
 
         # =========================== 计算账户总资产 ===========================
-        total_portfolio_value = (
-            portfolio_market_value + cash_balance
-        )  # 总资产 = 持仓市值 + 现金余额
+        # 总资产 = 持仓市值 + 现金余额
+        total_portfolio_value = portfolio_market_value + cash_balance
 
         # =========================== 保存组合账户历史记录 ===========================
         # 将当前期间的记录追加到该组合的历史记录中
@@ -423,15 +423,15 @@ def rolling_backtest(
         )
 
         # 移动到下一个组合索引
-        portfolio_index = (portfolio_index + 1) % holding_months
+        portfolio_index = (portfolio_index + 1) % portfolio_count
 
     # =========================== 连接每个组合的多个时间段记录 ===========================
-    print("正在连接每个组合的多个时间段记录...")
+    print("连接每个组合的多个时间段记录...")
 
     # 为每个组合连接其所有时间段的记录
     combined_portfolio_histories = {}
 
-    for portfolio_index in range(holding_months):
+    for portfolio_index in range(portfolio_count):
         if len(portfolio_histories[portfolio_index]["total_account_asset"]) == 0:
             continue
 
@@ -462,7 +462,7 @@ def rolling_backtest(
         }
 
     # =========================== 汇总所有组合的账户历史 ===========================
-    print("正在汇总所有组合的账户历史...")
+    print("汇总所有组合的账户历史...")
 
     # 获取所有组合的日期范围
     all_dates = set()
@@ -474,21 +474,21 @@ def rolling_backtest(
     aligned_portfolios = {}
     for portfolio_index, history in combined_portfolio_histories.items():
         # 创建完整的日期索引，默认值为每个组合的预分配资金
-        aligned_series = pd.Series(monthly_capital, index=all_dates)
+        aligned_series = pd.Series(portfolio_capital, index=all_dates)
 
         # 填入实际的资产数据
         portfolio_dates = history["total_account_asset"].index
         aligned_series.loc[portfolio_dates] = history["total_account_asset"]
 
-        # 处理组合结束后的情况：保持最后一天的资产值不变
-        if len(portfolio_dates) > 0:
-            last_date = portfolio_dates.max()
-            last_value = history["total_account_asset"].loc[last_date]
+        # # 处理组合结束后的情况：保持最后一天的资产值不变
+        # if len(portfolio_dates) > 0:
+        #     last_date = portfolio_dates.max()
+        #     last_value = history["total_account_asset"].loc[last_date]
 
-            # 对于组合结束后的日期，保持最后资产值
-            future_dates = [d for d in all_dates if d > last_date]
-            if future_dates:
-                aligned_series.loc[future_dates] = last_value
+        #     # 对于组合结束后的日期，保持最后资产值
+        #     future_dates = [d for d in all_dates if d > last_date]
+        #     if future_dates:
+        #         aligned_series.loc[future_dates] = last_value
 
         aligned_portfolios[portfolio_index] = aligned_series
 
@@ -506,7 +506,7 @@ def rolling_backtest(
         account_history.loc[date, "cash_account"] = 0  # 不再分别计算
 
     # =========================== 添加初始记录 ===========================
-    # 在第一个交易日之前添加初始资本记录
+    #   在第一个交易日之前添加初始资本记录
     initial_date = pd.to_datetime(
         get_previous_trading_date(account_history.index.min(), 1)
     )
@@ -521,7 +521,7 @@ def get_performance_analysis(
     rf=0.03,
     benchmark_index="000985.XSHG",
     portfolio_weights=None,
-    holding_months=None,
+    portfolio_count=None,
     factor_name=None,
     rank_n=None,
     save_path=None,
@@ -697,8 +697,8 @@ def get_performance_analysis(
         os.makedirs(charts_dir, exist_ok=True)
         os.makedirs(tables_dir, exist_ok=True)
 
-        chart_filename = f"rolling_{holding_months}_{factor_name}_{rank_n}_{benchmark_index}_{start_date}_{end_date}_{timestamp}_chart.png"
-        table_filename = f"rolling_{holding_months}_{factor_name}_{rank_n}_{benchmark_index}_{start_date}_{end_date}_{timestamp}_table.png"
+        chart_filename = f"rolling_{portfolio_count}_{factor_name}_{rank_n}_{benchmark_index}_{start_date}_{end_date}_{timestamp}_chart.png"
+        table_filename = f"rolling_{portfolio_count}_{factor_name}_{rank_n}_{benchmark_index}_{start_date}_{end_date}_{timestamp}_table.png"
         chart_path = os.path.join(charts_dir, chart_filename)
         table_path = os.path.join(tables_dir, table_filename)
 
@@ -738,7 +738,7 @@ def get_performance_analysis(
 
     # 设置主图样式
     ax1.set_title(
-        f"rolling_{holding_months}_{factor_name}_{rank_n}_收益曲线分析",
+        f"rolling_{portfolio_count}_{factor_name}_{rank_n}_收益曲线分析",
         fontsize=18,
         fontweight="bold",
         pad=20,

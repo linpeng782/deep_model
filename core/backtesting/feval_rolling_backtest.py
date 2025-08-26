@@ -5,7 +5,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
-from rolling_backtest_open import rolling_backtest, get_performance_analysis
+from rolling_backtest import rolling_backtest, get_performance_analysis
 
 
 def get_portfolio_weights_path(end_date, rank_n):
@@ -50,30 +50,34 @@ if __name__ == "__main__":
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
     signal_end_date = "2025-08-19"
+    backtest_end_date = "2025-08-19"
     rank_n = 10
-    holding_months = 1
+    portfolio_count = 12
 
     # 读取信号队列
     portfolio_weights_path = get_portfolio_weights_path(signal_end_date, rank_n)
-    print(f"---读取portfolio_weights: {os.path.basename(portfolio_weights_path)}---")
+    print(f"读取portfolio_weights: {os.path.basename(portfolio_weights_path)}")
     portfolio_weights = pd.read_pickle(portfolio_weights_path)
-    portfolio_weights = portfolio_weights.loc[:'2025-06-19']
+    # 根据backtest_end_date截取portfolio_weights
+    portfolio_weights = portfolio_weights.loc[:backtest_end_date]
 
     # 读取股票价格数据
-    bars_df_path = get_bars_df_path("2025-08-19")
-    print(f"---读取bars_df: {os.path.basename(bars_df_path)}---")
+    bars_df_path = get_bars_df_path(backtest_end_date)
+    print(f"读取bars_df: {os.path.basename(bars_df_path)}")
     bars_df = pd.read_pickle(bars_df_path)
 
     # 读取基准
     index_item = "000852.XSHG"
 
-    account_result = rolling_backtest(portfolio_weights, bars_df, holding_months=holding_months)
+    account_result = rolling_backtest(
+        portfolio_weights, bars_df, portfolio_count=portfolio_count
+    )
 
     performance_cumnet, result = get_performance_analysis(
         account_result,
         benchmark_index=index_item,
         portfolio_weights=portfolio_weights,
-        holding_months=holding_months,
+        portfolio_count=portfolio_count,
         factor_name="rank",
         rank_n=rank_n,
     )

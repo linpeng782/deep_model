@@ -178,12 +178,9 @@ def generate_factors_for_stock(stock_symbol, end_date):
             "ebit_per_share_ttm",
             "return_on_equity_lyr",
             "return_on_equity_ttm",
-            
-
-
-
         ]
 
+        # 获取基本面因子
         daily_fund = get_factor(stock_symbol, fund_list, start_date, end_date)
 
         # 合并技术因子和基本面因子
@@ -641,15 +638,12 @@ def test_single_stock(stock_symbol, output_folder_path, end_date="20250718"):
         return False
 
 
-
-
-
 # 每日手动调整的日期
 END_DATE = "20250819"  # 格式: YYYYMMDD
 
 if __name__ == "__main__":
     end_date = END_DATE
-    
+
     # 从配置文件获取路径
     csv_folder_path = RAW_DATA_DIR
 
