@@ -5,7 +5,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
-from rolling_backtest import rolling_backtest, get_performance_analysis
+from rolling_backtest_flexible import rolling_backtest, get_performance_analysis
 
 
 def get_portfolio_weights_path(end_date, rank_n):
@@ -52,7 +52,8 @@ if __name__ == "__main__":
     signal_end_date = "2025-08-19"
     backtest_end_date = "2025-08-19"
     rank_n = 10
-    portfolio_count = 12
+    portfolio_count = 252
+    rebalance_frequency = "daily"
 
     # 读取信号队列
     portfolio_weights_path = get_portfolio_weights_path(signal_end_date, rank_n)
@@ -70,7 +71,10 @@ if __name__ == "__main__":
     index_item = "000852.XSHG"
 
     account_result = rolling_backtest(
-        portfolio_weights, bars_df, portfolio_count=portfolio_count
+        portfolio_weights,
+        bars_df,
+        portfolio_count=portfolio_count,
+        rebalance_frequency=rebalance_frequency,
     )
 
     performance_cumnet, result = get_performance_analysis(
