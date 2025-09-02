@@ -98,8 +98,8 @@ column_order:
   - "volume"
   - "vwap"
   - "turnover_rate"
-  - "stock_free_circulation"
   - "free_turnover"
+  - "stock_free_circulation"
   - "pe_ratio_lyr"
   - "pe_ratio_ttm"
   - "pb_ratio_lyr"
@@ -131,4 +131,4 @@ processing_config:
   # 数据保留小数位数
   decimal_places: 4
   # 测试模式
-  test_mode: "single"  # single, batch, retry_failed
+  test_mode: "batch"  # single, batch, retry_failed
