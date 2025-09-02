@@ -1,0 +1,134 @@
+# 因子处理配置文件
+
+# 因子中英文映射字典
+factor_name_mapping:
+  # 基本信息
+  date: "交易日期"
+  order_book_id: "股票代码"
+  stock_name: "股票简称"
+  
+  # 技术因子
+  open: "开盘价"
+  high: "最高价"
+  low: "最低价"
+  close: "收盘价"
+  prev_close: "昨收价"
+  change_amount: "涨跌额"
+  change_pct: "涨跌幅"
+  amplitude: "振幅"
+  total_turnover: "成交额"
+  unadjusted_volume: "未复权成交量"
+  volume: "后复权成交量"
+  vwap: "成交量加权平均价格(vwap)"
+  turnover_rate: "换手率(%)"
+  free_turnover: "换手率(自由流通股)"
+  stock_free_circulation: "自由流通股本"
+  
+  # 基本面因子
+  pe_ratio_lyr: "市盈率_最近年报"
+  pe_ratio_ttm: "市盈率_TTM"
+  pb_ratio_lyr: "市净率_最近年报"
+  pb_ratio_ttm: "市净率_TTM"
+  pb_ratio_lf: "市净率_最新财报"
+  ps_ratio_lyr: "市销率_最近年报"
+  ps_ratio_ttm: "市销率_TTM"
+  dividend_yield_ttm: "股息率_TTM"
+  market_cap_3: "总市值"
+  market_cap_2: "流通市值"
+  book_to_market_ratio_lyr: "账面市值比_最近年报"
+  book_to_market_ratio_ttm: "账面市值比_TTM"
+  book_to_market_ratio_lf: "账面市值比_最新财报"
+  ebit_lyr: "息税前利润_最近年报"
+  ebit_ttm: "息税前利润_TTM"
+  ebitda_lyr: "息税折旧摊销前利润_最近年报"
+  ebitda_ttm: "息税折旧摊销前利润_TTM"
+  ebit_per_share_lyr: "每股息税前利润_最近年报"
+  ebit_per_share_ttm: "每股息税前利润_TTM"
+  return_on_equity_lyr: "净资产收益率_最近年报"
+  return_on_equity_ttm: "净资产收益率_TTM"
+
+# 基本面因子列表
+fundamental_factors:
+  - "pe_ratio_lyr"
+  - "pe_ratio_ttm"
+  - "pb_ratio_lyr"
+  - "pb_ratio_ttm"
+  - "pb_ratio_lf"
+  - "ps_ratio_lyr"
+  - "ps_ratio_ttm"
+  - "dividend_yield_ttm"
+  - "market_cap_3"
+  - "market_cap_2"
+  - "book_to_market_ratio_lyr"
+  - "book_to_market_ratio_ttm"
+  - "book_to_market_ratio_lf"
+  - "ebit_lyr"
+  - "ebit_ttm"
+  - "ebitda_lyr"
+  - "ebitda_ttm"
+  - "ebit_per_share_lyr"
+  - "ebit_per_share_ttm"
+  - "return_on_equity_lyr"
+  - "return_on_equity_ttm"
+
+# 技术因子列表
+technical_factors:
+  - "open"
+  - "high"
+  - "low"
+  - "close"
+  - "volume"
+  - "total_turnover"
+
+# 列顺序配置
+column_order:
+  - "date"
+  - "order_book_id"
+  - "stock_name"
+  - "open"
+  - "high"
+  - "low"
+  - "close"
+  - "prev_close"
+  - "change_amount"
+  - "change_pct"
+  - "amplitude"
+  - "total_turnover"
+  - "unadjusted_volume"
+  - "volume"
+  - "vwap"
+  - "turnover_rate"
+  - "stock_free_circulation"
+  - "free_turnover"
+  - "pe_ratio_lyr"
+  - "pe_ratio_ttm"
+  - "pb_ratio_lyr"
+  - "pb_ratio_ttm"
+  - "pb_ratio_lf"
+  - "ps_ratio_lyr"
+  - "ps_ratio_ttm"
+  - "dividend_yield_ttm"
+  - "market_cap_3"
+  - "market_cap_2"
+  - "book_to_market_ratio_lyr"
+  - "book_to_market_ratio_ttm"
+  - "book_to_market_ratio_lf"
+  - "ebit_lyr"
+  - "ebit_ttm"
+  - "ebitda_lyr"
+  - "ebitda_ttm"
+  - "ebit_per_share_lyr"
+  - "ebit_per_share_ttm"
+  - "return_on_equity_lyr"
+  - "return_on_equity_ttm"
+
+# 处理参数配置
+processing_config:
+  # 默认结束日期
+  default_end_date: "20250901"
+  # 最大并行工作线程数
+  max_workers: 4
+  # 数据保留小数位数
+  decimal_places: 4
+  # 测试模式
+  test_mode: "single"  # single, batch, retry_failed
