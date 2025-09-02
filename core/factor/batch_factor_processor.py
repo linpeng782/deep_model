@@ -9,9 +9,9 @@ from datetime import datetime
 import time
 
 # 添加项目配置路径
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-from config.paths import RAW_DATA_DIR, ENHANCED_DATA_DIR
-from config.settings import get_timestamped_output_path
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+from deep_model.config.paths import RAW_DATA_DIR, ENHANCED_DATA_DIR
+from deep_model.config.settings import get_timestamped_output_path
 
 # 导入统一的factor_utils包
 kdcj_root = os.path.join(os.path.dirname(__file__), "..", "..")
@@ -38,9 +38,10 @@ factor_name_mapping = {
     "change_amount": "涨跌额",
     "change_pct": "涨跌幅",
     "amplitude": "振幅",
-    "unadjusted_volume": "未复权成交量",
-    "volume": "成交量",
     "total_turnover": "成交额",
+    "unadjusted_volume": "未复权成交量",
+    "volume": "后复权成交量",
+    "vwap": "成交量加权平均价格(vwap)",
     "turnover_rate": "换手率(%)",
     "free_turnover": "换手率(自由流通股)",
     "stock_free_circulation": "自由流通股本",
@@ -55,6 +56,17 @@ factor_name_mapping = {
     "dividend_yield_ttm": "股息率_TTM",
     "market_cap_3": "总市值",
     "market_cap_2": "流通市值",
+    "book_to_market_ratio_lyr": "账面市值比_最近年报",
+    "book_to_market_ratio_ttm": "账面市值比_TTM",
+    "book_to_market_ratio_lf": "账面市值比_最新财报",
+    "ebit_lyr": "息税前利润_最近年报",
+    "ebit_ttm": "息税前利润_TTM",
+    "ebitda_lyr": "息税折旧摊销前利润_最近年报",
+    "ebitda_ttm": "息税折旧摊销前利润_TTM",
+    "ebit_per_share_lyr": "每股息税前利润_最近年报",
+    "ebit_per_share_ttm": "每股息税前利润_TTM",
+    "return_on_equity_lyr": "净资产收益率_最近年报",
+    "return_on_equity_ttm": "净资产收益率_TTM",
 }
 
 
@@ -104,7 +116,7 @@ def generate_factors_for_stock(stock_symbol, end_date):
             start_date,
             end_date,
             fields=tech_list,
-            adjust_type="post",
+            adjust_type="post_volume",
             skip_suspended=False,
         ).sort_index()
 
@@ -159,6 +171,9 @@ def generate_factors_for_stock(stock_symbol, end_date):
             daily_tech["unadjusted_volume"] / daily_tech["stock_free_circulation"]
         ) * 100
 
+        # 计算vwap
+        daily_tech["vwap"] = daily_tech["total_turnover"] / daily_tech["volume"]
+
         # 基本面因子
         fund_list = [
             "pe_ratio_lyr",
@@ -171,10 +186,14 @@ def generate_factors_for_stock(stock_symbol, end_date):
             "dividend_yield_ttm",
             "market_cap_3",
             "market_cap_2",
-            "ep_ratio_ttm",
+            "book_to_market_ratio_lyr",
             "book_to_market_ratio_ttm",
+            "book_to_market_ratio_lf",
+            "ebit_lyr",
             "ebit_ttm",
+            "ebitda_lyr",
             "ebitda_ttm",
+            "ebit_per_share_lyr",
             "ebit_per_share_ttm",
             "return_on_equity_lyr",
             "return_on_equity_ttm",
@@ -205,9 +224,10 @@ def generate_factors_for_stock(stock_symbol, end_date):
             "change_amount",
             "change_pct",
             "amplitude",
+            "total_turnover",
             "unadjusted_volume",
             "volume",
-            "total_turnover",
+            "vwap",
             "turnover_rate",
             "stock_free_circulation",
             "free_turnover",
@@ -221,6 +241,17 @@ def generate_factors_for_stock(stock_symbol, end_date):
             "dividend_yield_ttm",
             "market_cap_3",
             "market_cap_2",
+            "book_to_market_ratio_lyr",
+            "book_to_market_ratio_ttm",
+            "book_to_market_ratio_lf",
+            "ebit_lyr",
+            "ebit_ttm",
+            "ebitda_lyr",
+            "ebitda_ttm",
+            "ebit_per_share_lyr",
+            "ebit_per_share_ttm",
+            "return_on_equity_lyr",
+            "return_on_equity_ttm",
         ]
 
         # 重新排列列顺序
@@ -639,7 +670,7 @@ def test_single_stock(stock_symbol, output_folder_path, end_date="20250718"):
 
 
 # 每日手动调整的日期
-END_DATE = "20250819"  # 格式: YYYYMMDD
+END_DATE = "20250901"  # 格式: YYYYMMDD
 
 if __name__ == "__main__":
     end_date = END_DATE
@@ -653,8 +684,8 @@ if __name__ == "__main__":
 
     print(f"输入路径: {csv_folder_path}")
     print(f"输出路径: {output_folder_path}")
-    print(f"结束日期: {end_date}")
-    print(f"时间戳: {timestamp}")
+    print(f"数据下载结束日期: {end_date}")
+    print(f"输出文件时间戳: {timestamp}")
 
     # 选择测试模式
     test_mode = "single"  # "single", "batch", 或 "retry_failed"
