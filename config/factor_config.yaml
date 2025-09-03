@@ -125,7 +125,7 @@ column_order:
 # 处理参数配置
 processing_config:
   # 默认结束日期
-  default_end_date: "20250901"
+  default_end_date: "20250902"
   # 最大并行工作线程数
   max_workers: 4
   # 数据保留小数位数

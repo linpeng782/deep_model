@@ -1,12 +1,13 @@
 import sys
 import os
-import re
 import pandas as pd
-import yaml
+import time
+import re
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 import time
+import yaml
 
 # 添加项目配置路径
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -303,6 +304,7 @@ def batch_process_stocks_parallel(
 
     success_count = 0
     failed_count = 0
+    failed_stocks = []  # 记录失败的股票
 
     # 使用线程池并行处理
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -335,12 +337,26 @@ def batch_process_stocks_parallel(
                     )
                 else:
                     failed_count += 1
+                    failed_stocks.append(
+                        {
+                            "stock_code": stock_symbol,
+                            "stock_name": stock_name,
+                            "error": "生成因子失败",
+                        }
+                    )
                     print(
                         f"进度: {i}/{len(stock_list)} - 失败: {stock_symbol} - 错误: 生成因子失败"
                     )
 
             except Exception as e:
                 failed_count += 1
+                failed_stocks.append(
+                    {
+                        "stock_code": stock_symbol,
+                        "stock_name": stock_name,
+                        "error": str(e),
+                    }
+                )
                 print(
                     f"进度: {i}/{len(stock_list)} - 失败: {stock_symbol} - 错误: {str(e)}"
                 )
@@ -349,6 +365,10 @@ def batch_process_stocks_parallel(
     print(f"成功: {success_count} 只")
     print(f"失败: {failed_count} 只")
     print(f"总计: {len(stock_list)} 只")
+
+    # 保存失败股票列表
+    if failed_stocks:
+        save_failed_stocks(failed_stocks, "batch_process_parallel")
 
 
 def batch_process_stocks(csv_folder_path, output_folder_path, end_date, limit=None):
@@ -366,6 +386,7 @@ def batch_process_stocks(csv_folder_path, output_folder_path, end_date, limit=No
 
     success_count = 0
     error_count = 0
+    failed_stocks = []  # 记录失败的股票
 
     for i, stock_info in enumerate(stock_list, 1):
         print(f"\n进度: {i}/{len(stock_list)}")
@@ -383,10 +404,59 @@ def batch_process_stocks(csv_folder_path, output_folder_path, end_date, limit=No
             print(f"成功保存: {output_filename}")
             success_count += 1
         else:
+            failed_stocks.append(
+                {
+                    "stock_code": stock_info["converted_code"],
+                    "stock_name": stock_info["stock_name"],
+                    "error": "生成因子失败",
+                }
+            )
             print(f"处理失败: {stock_info['converted_code']}")
             error_count += 1
 
         # 添加延时避免API限制
+
+    print(f"\n处理完成！")
+    print(f"成功: {success_count} 只")
+    print(f"失败: {error_count} 只")
+    print(f"总计: {len(stock_list)} 只")
+
+    # 保存失败股票列表
+    if failed_stocks:
+        save_failed_stocks(failed_stocks, "batch_process_single")
+
+
+def save_failed_stocks(failed_stocks, process_type):
+    """
+    保存失败股票信息到文件
+
+    Args:
+        failed_stocks (list): 失败股票列表
+        process_type (str): 处理类型 (batch_process_parallel, batch_process_single, retry_failed)
+    """
+    # 创建数据目录
+    data_dir = Path(os.path.dirname(__file__)) / ".." / "data"
+    data_dir.mkdir(exist_ok=True)
+
+    # 生成文件名，包含时间戳和处理类型
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"failed_{process_type}_{timestamp}.txt"
+    file_path = data_dir / filename
+
+    # 写入失败股票信息
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(f"失败股票记录 - {process_type}\n")
+        f.write(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"失败总数: {len(failed_stocks)}\n")
+        f.write("=" * 60 + "\n\n")
+
+        for i, stock in enumerate(failed_stocks, 1):
+            f.write(f"{i:3d}. 股票代码: {stock['stock_code']}\n")
+            f.write(f"     股票名称: {stock['stock_name']}\n")
+            f.write(f"     失败原因: {stock['error']}\n")
+            f.write("-" * 40 + "\n")
+
+    print(f"失败股票记录已保存到: {file_path}")
 
 
 def get_failed_stocks(csv_folder_path, output_folder_path, end_date):
@@ -435,6 +505,7 @@ def retry_failed_stocks(
 
     success_count = 0
     failed_count = 0
+    retry_failed_stocks = []  # 记录重试失败的股票
 
     if use_parallel:
         print(f"使用并行模式重试，{max_workers} 个线程")
@@ -469,12 +540,26 @@ def retry_failed_stocks(
                         )
                     else:
                         failed_count += 1
+                        retry_failed_stocks.append(
+                            {
+                                "stock_code": stock_symbol,
+                                "stock_name": stock_name,
+                                "error": "生成因子失败",
+                            }
+                        )
                         print(
                             f"重试进度: {i}/{len(failed_stocks)} - 失败: {stock_symbol} - 错误: 生成因子失败"
                         )
 
                 except Exception as e:
                     failed_count += 1
+                    retry_failed_stocks.append(
+                        {
+                            "stock_code": stock_symbol,
+                            "stock_name": stock_name,
+                            "error": str(e),
+                        }
+                    )
                     print(
                         f"重试进度: {i}/{len(failed_stocks)} - 失败: {stock_symbol} - 错误: {str(e)}"
                     )
@@ -498,6 +583,13 @@ def retry_failed_stocks(
                     print(f"成功保存: {output_filename}")
                     success_count += 1
                 else:
+                    retry_failed_stocks.append(
+                        {
+                            "stock_code": stock_info["converted_code"],
+                            "stock_name": stock_info["stock_name"],
+                            "error": "生成因子失败",
+                        }
+                    )
                     print(f"失败: {stock_info['converted_code']}")
                     failed_count += 1
 
@@ -505,6 +597,13 @@ def retry_failed_stocks(
                 time.sleep(1)
 
             except Exception as e:
+                retry_failed_stocks.append(
+                    {
+                        "stock_code": stock_info["converted_code"],
+                        "stock_name": stock_info["stock_name"],
+                        "error": str(e),
+                    }
+                )
                 print(f"失败: {stock_info['converted_code']} - 错误: {str(e)}")
                 failed_count += 1
 
@@ -512,6 +611,10 @@ def retry_failed_stocks(
     print(f"成功: {success_count} 只")
     print(f"失败: {failed_count} 只")
     print(f"重试总计: {len(failed_stocks)} 只")
+
+    # 保存重试失败的股票列表
+    if retry_failed_stocks:
+        save_failed_stocks(retry_failed_stocks, "retry_failed")
 
 
 def test_single_stock(stock_symbol, output_folder_path, end_date="20250718"):
